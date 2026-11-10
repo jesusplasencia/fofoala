@@ -110,7 +110,19 @@ export interface ActivateLotPinResponse {
   message: string
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+function resolveApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim()
+  if (configured) {
+    return configured.replace(/\/+$/, '')
+  }
+  const host = window.location.hostname.toLowerCase()
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) {
+    return 'http://127.0.0.1:8000'
+  }
+  return 'https://koloala-api-production.up.railway.app'
+}
+
+const API_BASE_URL = resolveApiBaseUrl()
 const STORAGE_KEY = 'fofoala_koloala_session_v1'
 
 /**
