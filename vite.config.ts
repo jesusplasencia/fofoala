@@ -13,9 +13,9 @@ export default defineConfig({
       manifest: {
         name: 'Las Villas Club - Control de Garita',
         short_name: 'Las Villas',
-        description: 'Pases de acceso para residentes, control de garita y administración de Villa Club.',
-        theme_color: '#064e3b',
-        background_color: '#f8fafc',
+        description: 'Pases QR de garita, carnet de residentes y vitrina de Las Villas Club.',
+        theme_color: '#11472a',
+        background_color: '#fffaf0',
         display: 'standalone',
         orientation: 'portrait',
       },

@@ -1,327 +1,232 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  Building2,
-  CheckCircle2,
-  KeyRound,
-  Loader2,
-  Phone,
-  ShieldCheck,
-  UserCheck,
-} from 'lucide-react'
+import { ArrowLeft, ArrowRight, Gift, KeyRound, Phone, QrCode, Smartphone, TreePine } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import {
-  type AuthSession,
-  detectVillaId,
-  getVillaDisplayName,
-  koloalaApi,
-  saveSession,
-} from '../lib/api'
+import { type AuthSession, detectVillaId, getVillaDisplayName, koloalaApi, saveSession } from '../lib/api'
+import { Alert, Button, Garland, inputClass, Label, Snowfall } from './ui'
 
 interface LoginViewProps {
   onLoginSuccess: (session: AuthSession) => void
 }
 
-type LoginStep = 'IDENTIFY_LOT' | 'ACTIVATE_WHATSAPP' | 'ENTER_PASSWORD'
+type Step = 'IDENTIFY' | 'ACTIVATE' | 'PASSWORD' | 'NO_ACCOUNT'
 
 export function LoginView({ onLoginSuccess }: LoginViewProps) {
   const villaId = detectVillaId()
   const villaName = getVillaDisplayName(villaId)
 
-  const [step, setStep] = useState<LoginStep>('IDENTIFY_LOT')
+  const [step, setStep] = useState<Step>('IDENTIFY')
   const [username, setUsername] = useState('')
   const [ownerName, setOwnerName] = useState<string | null>(null)
-  const [maskedPhoneHint, setMaskedPhoneHint] = useState<string | null>(null)
   const [phoneInput, setPhoneInput] = useState('')
   const [password, setPassword] = useState('')
-  const [pinSentNotice, setPinSentNotice] = useState<string | null>(null)
-
+  const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleResetToStep1 = () => {
-    setStep('IDENTIFY_LOT')
+  const reset = () => {
+    setStep('IDENTIFY')
     setPassword('')
     setPhoneInput('')
-    setPinSentNotice(null)
+    setNotice(null)
     setError(null)
   }
 
-  // Paso 1: Ingresar solo el Lote (ej. P21) o Usuario (ADMIN / GUARDIA1)
-  const handleLookupSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!username.trim()) return
-
+  const run = async (fn: () => Promise<void>, fallback: string) => {
     setLoading(true)
     setError(null)
     try {
-      const lookup = await koloalaApi.lookupUser(username.trim().toUpperCase(), villaId)
+      await fn()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallback)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLookup = (e: FormEvent) => {
+    e.preventDefault()
+    const value = username.trim().replace(/\s+/g, '').toUpperCase()
+    if (!value) return
+    run(async () => {
+      const lookup = await koloalaApi.lookupUser(value, villaId)
       setUsername(lookup.username)
       setOwnerName(lookup.owner_name)
-      setMaskedPhoneHint(lookup.masked_phone_hint)
-
-      if (lookup.status === 'NEEDS_PHONE_ACTIVATION') {
-        setStep('ACTIVATE_WHATSAPP')
+      if (lookup.status === 'UNREGISTERED_NO_ACCOUNT') {
+        setNotice(lookup.message)
+        setStep('NO_ACCOUNT')
+      } else if (lookup.status === 'NEEDS_PHONE_ACTIVATION') {
+        setStep('ACTIVATE')
       } else {
-        setStep('ENTER_PASSWORD')
+        setStep('PASSWORD')
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se encontró el lote indicado')
-    } finally {
-      setLoading(false)
-    }
+    }, 'No encontramos ese número o usuario')
   }
 
-  // Paso 2A (Solo primera vez): Confirmar WhatsApp para recibir el PIN generado en el acto
-  const handleActivatePinSubmit = async (e: FormEvent) => {
+  const handleActivate = (e: FormEvent) => {
     e.preventDefault()
     if (!phoneInput.trim()) return
-
-    setLoading(true)
-    setError(null)
-    try {
+    run(async () => {
       const res = await koloalaApi.activateLotPin(username, phoneInput.trim(), villaId)
-      setPinSentNotice(res.message)
-      setStep('ENTER_PASSWORD')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo verificar el número de WhatsApp')
-    } finally {
-      setLoading(false)
-    }
+      setNotice(res.message)
+      setStep('PASSWORD')
+    }, 'No se pudo enviar el PIN por WhatsApp')
   }
 
-  // Paso 2B: Ingresar el PIN de 8 dígitos o contraseña
-  const handlePasswordLoginSubmit = async (e: FormEvent) => {
+  const handleLogin = (e: FormEvent) => {
     e.preventDefault()
     if (!password.trim()) return
-
-    setLoading(true)
-    setError(null)
-    try {
+    run(async () => {
       const session = await koloalaApi.login(username, password, villaId)
       saveSession(session)
       onLoginSuccess(session)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
-    } finally {
-      setLoading(false)
-    }
+    }, 'No se pudo iniciar sesión')
   }
 
+  const Who = (
+    <div className="flex items-center justify-between bg-pine-50 border-2 border-pine-100 rounded-2xl px-4 py-3">
+      <div className="min-w-0">
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-pine-700 block">Ingresando como</span>
+        <strong className="text-base font-black text-pine-950 truncate block">
+          {username} {ownerName ? `• ${ownerName}` : ''}
+        </strong>
+      </div>
+      <button type="button" onClick={reset} className="text-xs font-extrabold text-berry-700 hover:underline flex items-center gap-1 cursor-pointer">
+        <ArrowLeft className="w-3.5 h-3.5" />
+        Cambiar
+      </button>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center px-4 py-8 bg-gradient-to-b from-emerald-950 via-emerald-900 to-slate-900">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-emerald-100">
-        {/* Cabecera Oficial de la Villa (Fija por Subdominio) */}
-        <div className="bg-emerald-900 px-6 py-7 text-white text-center relative">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-800/90 border border-emerald-600/40 mb-3 shadow-inner">
-            <ShieldCheck className="w-8 h-8 text-emerald-300" />
-          </div>
-          <div className="mb-1">
-            <span className="inline-block px-3 py-1 rounded-full bg-emerald-800 border border-emerald-600/60 text-[11px] font-black uppercase tracking-widest text-emerald-300">
-              PORTAL OFICIAL • {villaId}
-            </span>
-          </div>
-          <h1 className="text-2xl font-extrabold tracking-tight mt-1">{villaName}</h1>
-          <p className="text-emerald-200 text-sm mt-1">
-            Control Inteligente de Garita y Residentes
-          </p>
+    <div className="min-h-screen xmas-header flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden">
+      <Snowfall flakes={34} />
+      <div className="relative z-10 w-full max-w-md">
+        <div className="text-center text-white mb-5">
+          <p className="font-festive text-4xl sm:text-5xl text-gold-300 drop-shadow">¡Felices Fiestas!</p>
+          <p className="text-sm text-white/80 font-semibold mt-1">Portal oficial de garita y residentes</p>
         </div>
 
-        {/* PASO 1: IDENTIFICAR LOTE O USUARIO */}
-        {step === 'IDENTIFY_LOT' && (
-          <form onSubmit={handleLookupSubmit} className="p-6 sm:p-8 space-y-5">
-            {error && (
-              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
-                Ingresa tu Manzana y Lote (o Usuario)
-              </label>
-              <div className="relative">
-                <Building2 className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  autoCapitalize="characters"
-                  placeholder="Ej. P20, P21 o GUARDIA1"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value.toUpperCase())}
-                  className="w-full pl-12 pr-4 py-4 text-lg font-bold tracking-wide bg-slate-50 border-2 border-slate-200 rounded-2xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                />
-              </div>
+        <div className="bg-white rounded-3xl shadow-2xl shadow-black/40 overflow-hidden">
+          <div className="bg-berry-600 px-6 pt-6 pb-5 text-white text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/15 border border-gold-300/50 mb-2">
+              <TreePine className="w-8 h-8 text-gold-300" />
             </div>
+            <span className="block text-[11px] font-black uppercase tracking-[0.2em] text-gold-200">Portal oficial • {villaId}</span>
+            <h1 className="text-2xl font-black tracking-tight mt-0.5">{villaName}</h1>
+          </div>
+          <Garland />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-4 px-6 rounded-2xl bg-emerald-700 hover:bg-emerald-800 active:scale-[0.99] text-white font-extrabold text-lg shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 transition-all disabled:opacity-60 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                  Consultando...
-                </>
-              ) : (
-                <>
+          <div className="p-6 sm:p-7 space-y-5">
+            {error && <Alert tone="error">{error}</Alert>}
+
+            {step === 'IDENTIFY' && (
+              <form onSubmit={handleLookup} className="space-y-5">
+                <div>
+                  <Label htmlFor="login-user">Tu número de celular</Label>
+                  <div className="relative">
+                    <Smartphone className="w-5 h-5 text-pine-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="login-user"
+                      required
+                      autoFocus
+                      autoComplete="username"
+                      inputMode="tel"
+                      placeholder="Ej. 916220518"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className={`${inputClass} pl-12 text-lg tracking-wide`}
+                    />
+                  </div>
+                  <p className="text-[11px] text-pine-800/60 font-semibold mt-1.5">Personal de garita: usa tu usuario (ej. GUARDIA1).</p>
+                </div>
+                <Button type="submit" size="lg" className="w-full" loading={loading}>
                   Continuar
-                  <ArrowRight className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* PASO 2A: PRIMER INGRESO DEL VECINO -> CONFIRMAR WHATSAPP Y RECIBIR PIN */}
-        {step === 'ACTIVATE_WHATSAPP' && (
-          <form onSubmit={handleActivatePinSubmit} className="p-6 sm:p-8 space-y-5">
-            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3">
-              <div>
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 block">
-                  Primera Activación • Casa {username}
-                </span>
-                <strong className="text-sm font-black text-slate-900">
-                  {ownerName || `Lote ${username}`}
-                </strong>
-              </div>
-              <button
-                type="button"
-                onClick={handleResetToStep1}
-                className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Cambiar
-              </button>
-            </div>
-
-            {error && (
-              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
-                {error}
-              </div>
+                  {!loading && <ArrowRight className="w-5 h-5" />}
+                </Button>
+                <a
+                  href="/visita"
+                  className="flex items-center justify-center gap-2 text-sm font-extrabold text-berry-700 hover:text-berry-800 hover:underline"
+                >
+                  <QrCode className="w-4 h-4" />
+                  ¿Vienes de visita? Saca tu pase aquí
+                </a>
+              </form>
             )}
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Confirma tu número de WhatsApp registrado
-              </label>
-              {maskedPhoneHint && (
-                <p className="text-xs text-slate-500 mb-2">
-                  Por seguridad, escribe tu número celular terminado en{' '}
-                  <strong className="font-mono text-slate-800">{maskedPhoneHint}</strong> para
-                  enviarte tu PIN de 8 dígitos por WhatsApp:
+            {step === 'NO_ACCOUNT' && (
+              <div className="space-y-4 text-center">
+                <div className="w-16 h-16 mx-auto rounded-full bg-gold-100 flex items-center justify-center">
+                  <Gift className="w-8 h-8 text-berry-600" />
+                </div>
+                <p className="text-pine-900 font-bold">
+                  {notice || 'Este número no tiene cuenta. Si vienes de visita, pide a tu anfitrión un QR o escanea el cartel de la garita.'}
                 </p>
-              )}
-              <div className="relative">
-                <Phone className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                <input
-                  type="tel"
-                  required
-                  autoFocus
-                  inputMode="numeric"
-                  placeholder="Ej. 987654321"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 text-lg font-bold font-mono tracking-wider bg-slate-50 border-2 border-slate-200 rounded-2xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-base shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 transition-all disabled:opacity-60 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Enviando PIN por WhatsApp...
-                </>
-              ) : (
-                'Enviar mi PIN por WhatsApp'
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* PASO 2B: INGRESAR PIN DE 8 DÍGITOS / CONTRASEÑA */}
-        {step === 'ENTER_PASSWORD' && (
-          <form onSubmit={handlePasswordLoginSubmit} className="p-6 sm:p-8 space-y-5">
-            <div className="flex items-center justify-between bg-slate-100 border border-slate-200 rounded-2xl px-4 py-3">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-                  Ingresando como
-                </span>
-                <strong className="text-base font-black text-slate-900">
-                  {username} {ownerName ? `• ${ownerName}` : ''}
-                </strong>
-              </div>
-              <button
-                type="button"
-                onClick={handleResetToStep1}
-                className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Cambiar
-              </button>
-            </div>
-
-            {pinSentNotice && (
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-start gap-2.5">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                <span>{pinSentNotice}</span>
+                <a
+                  href="/visita"
+                  className="block w-full py-4 rounded-2xl bg-berry-600 hover:bg-berry-700 text-white font-extrabold shadow-md"
+                >
+                  Sacar mi pase de visita
+                </a>
+                <button type="button" onClick={reset} className="text-sm font-extrabold text-pine-700 hover:underline cursor-pointer">
+                  Probar con otro número
+                </button>
               </div>
             )}
 
-            {error && (
-              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
-                {error}
-              </div>
+            {step === 'ACTIVATE' && (
+              <form onSubmit={handleActivate} className="space-y-5">
+                {Who}
+                <div>
+                  <Label htmlFor="login-phone">Confirma tu WhatsApp para recibir tu PIN</Label>
+                  <div className="relative">
+                    <Phone className="w-5 h-5 text-pine-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="login-phone"
+                      type="tel"
+                      required
+                      autoFocus
+                      inputMode="numeric"
+                      placeholder="Ej. 987654321"
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      className={`${inputClass} pl-12 text-lg font-mono tracking-wider`}
+                    />
+                  </div>
+                </div>
+                <Button type="submit" variant="berry" size="lg" className="w-full" loading={loading}>
+                  Enviar mi PIN por WhatsApp
+                </Button>
+              </form>
             )}
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
-                PIN de 8 dígitos / Contraseña
-              </label>
-              <div className="relative">
-                <KeyRound className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  autoFocus
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 text-lg font-bold tracking-widest bg-slate-50 border-2 border-slate-200 rounded-2xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-4 px-6 rounded-2xl bg-emerald-700 hover:bg-emerald-800 active:scale-[0.99] text-white font-extrabold text-lg shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 transition-all disabled:opacity-60 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                  Verificando...
-                </>
-              ) : (
-                <>
-                  <UserCheck className="w-6 h-6" />
+            {step === 'PASSWORD' && (
+              <form onSubmit={handleLogin} className="space-y-5">
+                {Who}
+                {notice && <Alert tone="success">{notice}</Alert>}
+                <div>
+                  <Label htmlFor="login-pin">PIN de 8 dígitos</Label>
+                  <div className="relative">
+                    <KeyRound className="w-5 h-5 text-pine-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="login-pin"
+                      type="password"
+                      required
+                      autoFocus
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className={`${inputClass} pl-12 text-lg tracking-widest`}
+                    />
+                  </div>
+                </div>
+                <Button type="submit" size="lg" className="w-full" loading={loading}>
                   Ingresar a {villaName}
-                </>
-              )}
-            </button>
-
-            <p className="text-center text-xs text-slate-400 pt-1">
-              Tu sesión quedará guardada automáticamente por 30 días en este dispositivo.
-            </p>
-          </form>
-        )}
+                </Button>
+                <p className="text-center text-xs text-pine-800/50 font-semibold">Tu sesión queda guardada 30 días en este dispositivo.</p>
+              </form>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

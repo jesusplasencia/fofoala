@@ -1,8 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&family=Nunito:wght@500;700;800;900&display=swap');
 @import "tailwindcss";
+
+/* =====================================================================
+   Tema Navideño Las Villas: pino (verde), baya (rojo) y oro (amarillo)
+   ===================================================================== */
+@theme {
+  --font-sans: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-festive: "Mountains of Christmas", "Nunito", cursive;
+
+  --color-pine-50: #effaf2;
+  --color-pine-100: #d6f2de;
+  --color-pine-200: #a9e2ba;
+  --color-pine-300: #6fca8d;
+  --color-pine-400: #3dab65;
+  --color-pine-500: #1f8c4a;
+  --color-pine-600: #16703b;
+  --color-pine-700: #135a31;
+  --color-pine-800: #11472a;
+  --color-pine-900: #0c3520;
+  --color-pine-950: #061f12;
+
+  --color-berry-50: #fff1f1;
+  --color-berry-100: #ffdfdf;
+  --color-berry-200: #ffc2c2;
+  --color-berry-300: #ff9393;
+  --color-berry-400: #f45656;
+  --color-berry-500: #e02828;
+  --color-berry-600: #c21616;
+  --color-berry-700: #a01212;
+  --color-berry-800: #831515;
+  --color-berry-900: #6d1717;
+
+  --color-gold-50: #fffbea;
+  --color-gold-100: #fff3c4;
+  --color-gold-200: #ffe585;
+  --color-gold-300: #ffd447;
+  --color-gold-400: #fbbf24;
+  --color-gold-500: #e8a00a;
+  --color-gold-600: #c47a05;
+  --color-gold-700: #9c5608;
+
+  --color-snow: #fffaf0;
+}
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased selection:bg-emerald-600 selection:text-white;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    @apply bg-snow text-pine-950 antialiased selection:bg-berry-600 selection:text-white;
+    font-family: var(--font-sans);
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+}
+
+/* Fondo de las cabeceras: pino profundo con brillo dorado */
+.xmas-header {
+  background:
+    radial-gradient(120% 90% at 85% -20%, rgb(251 191 36 / 0.28), transparent 55%),
+    radial-gradient(90% 80% at 0% 120%, rgb(194 22 22 / 0.35), transparent 60%),
+    linear-gradient(160deg, var(--color-pine-800), var(--color-pine-950));
+}
+
+.xmas-page {
+  background:
+    radial-gradient(60% 40% at 100% 0%, rgb(194 22 22 / 0.07), transparent 70%),
+    radial-gradient(60% 40% at 0% 100%, rgb(22 112 59 / 0.08), transparent 70%),
+    var(--color-snow);
+}
+
+/* Guirnalda: franja de bastón de caramelo + luces que titilan */
+.garland {
+  position: relative;
+  height: 10px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-berry-600) 0 10px,
+    #fff 10px 20px,
+    var(--color-pine-600) 20px 30px,
+    #fff 30px 40px
+  );
+}
+.garland-lights {
+  display: flex;
+  justify-content: space-around;
+  position: absolute;
+  inset-inline: 0;
+  top: 6px;
+  pointer-events: none;
+}
+.garland-lights span {
+  width: 9px;
+  height: 13px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  box-shadow: 0 0 10px currentColor;
+  background: currentColor;
+  animation: twinkle 1.6s ease-in-out infinite;
+}
+.garland-lights span:nth-child(3n + 1) {
+  color: var(--color-berry-500);
+}
+.garland-lights span:nth-child(3n + 2) {
+  color: var(--color-gold-300);
+  animation-delay: 0.5s;
+}
+.garland-lights span:nth-child(3n) {
+  color: var(--color-pine-400);
+  animation-delay: 1s;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1.2);
+  }
+  50% {
+    opacity: 0.45;
+    filter: brightness(0.8);
+  }
+}
+
+/* Nieve ligera (solo decorativa, no bloquea clics) */
+.snowfall {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+.snowfall i {
+  position: absolute;
+  top: -12px;
+  display: block;
+  border-radius: 9999px;
+  background: #fff;
+  opacity: 0.85;
+  animation: snow linear infinite;
+}
+@keyframes snow {
+  to {
+    transform: translate3d(var(--drift, 20px), 105vh, 0);
+  }
+}
+
+/* Cinta dorada para tarjetas destacadas */
+.ribbon-card {
+  position: relative;
+  overflow: hidden;
+}
+.ribbon-card::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 14px;
+  transform: translateX(-50%);
+  background: linear-gradient(var(--color-gold-300), var(--color-gold-500));
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snowfall,
+  .garland-lights span {
+    animation: none !important;
+  }
+  .snowfall {
+    display: none;
   }
 }

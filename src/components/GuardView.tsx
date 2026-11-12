@@ -1,359 +1,629 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   AlertTriangle,
   Camera,
   CameraOff,
-  CarFront,
   CheckCircle2,
-  IdCard,
-  KeySquare,
-  Loader2,
-  LogOut,
+  ClipboardList,
+  Eye,
+  EyeOff,
+  Home,
   RotateCcw,
+  ScanLine,
+  Search,
   Shield,
+  UserPlus,
   XCircle,
 } from 'lucide-react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import {
+  type AttendeeCheckIn,
   type AuthSession,
+  formatTime,
+  type GuardPassView,
+  KIND_LABEL,
   koloalaApi,
-  type PassVerificationResponse,
+  type ResidentEntryView,
+  type Verification,
+  VERIFICATION_LABEL,
 } from '../lib/api'
-import { extractPassCodeFromScannedText } from '../lib/passCard'
+import { parseScan } from '../lib/passCard'
+import { type AttendeeDraft, AttendeeEditor, emptyAttendee, toAttendeeInputs } from './AttendeeEditor'
+import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
 interface GuardViewProps {
   session: AuthSession
   onLogout: () => void
 }
 
+type Tab = 'scan' | 'desk' | 'log'
+
 export function GuardView({ session, onLogout }: GuardViewProps) {
-  const [code, setCode] = useState('')
-  const [dni, setDni] = useState('')
-  const [plate, setPlate] = useState('')
-  const [result, setResult] = useState<PassVerificationResponse | null>(null)
+  const [tab, setTab] = useState<Tab>('scan')
+  return (
+    <div className="min-h-screen xmas-page pb-12">
+      <AppHeader eyebrow={`Garita oficial • ${session.villa_id}`} title={`Vigilante ${session.username}`} icon={<Shield className="w-6 h-6" />} onLogout={onLogout}>
+        <Tabs
+          dark
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'scan', label: 'Escanear', icon: <ScanLine className="w-4 h-4" /> },
+            { id: 'desk', label: 'Mesa', icon: <UserPlus className="w-4 h-4" /> },
+            { id: 'log', label: 'Bitácora', icon: <ClipboardList className="w-4 h-4" /> },
+          ]}
+        />
+      </AppHeader>
+      <main className="relative z-10 max-w-xl mx-auto px-4 pt-5 space-y-5">
+        {tab === 'scan' && <ScanTab />}
+        {tab === 'desk' && <DeskTab />}
+        {tab === 'log' && <LogTab />}
+      </main>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Escanear: carnet de residente o pase de visita
+// ---------------------------------------------------------------------------
+function ScanTab() {
+  const [manual, setManual] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [resident, setResident] = useState<ResidentEntryView | null>(null)
+  const [pass, setPass] = useState<GuardPassView | null>(null)
+  const [passRef, setPassRef] = useState<string | null>(null)
+  const [showManualResident, setShowManualResident] = useState(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
-  const dniInputRef = useRef<HTMLInputElement | null>(null)
 
-  const verifyMutation = useMutation({
-    mutationFn: () => koloalaApi.verifyPass(code, dni, plate),
-    onSuccess: (data) => {
-      setResult(data)
+  const residentMut = useMutation({
+    mutationFn: koloalaApi.residentEntry,
+    onSuccess: (r) => setResident(r),
+  })
+  const lookupMut = useMutation({
+    mutationFn: (ref: string) => koloalaApi.guardLookup(ref),
+    onSuccess: (p, ref) => {
+      setPass(p)
+      setPassRef(ref)
     },
   })
 
-  const stopCameraScanner = async () => {
-    if (scannerRef.current) {
+  const clear = () => {
+    setResident(null)
+    setPass(null)
+    setPassRef(null)
+    setManual('')
+    residentMut.reset()
+    lookupMut.reset()
+  }
+
+  const handleText = (text: string) => {
+    clear()
+    const parsed = parseScan(text)
+    if (parsed.type === 'carnet') residentMut.mutate({ qr_payload: parsed.payload })
+    else if (parsed.type === 'visit') lookupMut.mutate(parsed.ref)
+    else setCameraError('No reconocemos ese código. Prueba con el código de 6 caracteres.')
+  }
+
+  const stopScanner = async () => {
+    const s = scannerRef.current
+    scannerRef.current = null
+    if (s) {
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop()
-        }
-        scannerRef.current.clear()
+        if (s.isScanning) await s.stop()
+        s.clear()
       } catch {
-        // ignore stop errors
+        // ignore
       }
-      scannerRef.current = null
     }
     setScannerOpen(false)
   }
 
-  const startCameraScanner = async () => {
+  const startScanner = () => {
     setCameraError(null)
     setScannerOpen(true)
-
     setTimeout(async () => {
       try {
-        const html5QrCode = new Html5Qrcode('koloala-qr-reader')
-        scannerRef.current = html5QrCode
-        await html5QrCode.start(
+        const s = new Html5Qrcode('garita-qr-reader')
+        scannerRef.current = s
+        await s.start(
           { facingMode: 'environment' },
-          {
-            fps: 12,
-            qrbox: { width: 230, height: 230 },
+          { fps: 12, qrbox: { width: 240, height: 240 } },
+          async (decoded) => {
+            await stopScanner()
+            handleText(decoded)
           },
-          async (decodedText) => {
-            const parsedCode = extractPassCodeFromScannedText(decodedText)
-            if (parsedCode.length === 6) {
-              setCode(parsedCode)
-              await stopCameraScanner()
-              setTimeout(() => dniInputRef.current?.focus(), 100)
-            }
-          },
-          () => {
-            // frame scan miss
-          },
+          () => {},
         )
       } catch {
-        setCameraError(
-          'No se pudo abrir la cámara. Asegúrate de dar permiso de cámara al navegador o escribe los 6 dígitos manualmente.',
-        )
+        setCameraError('No se pudo abrir la cámara. Da permiso al navegador o escribe el código.')
         setScannerOpen(false)
       }
     }, 80)
   }
 
-  useEffect(() => {
-    return () => {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        scannerRef.current.stop().catch(() => {})
-      }
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (scannerRef.current?.isScanning) scannerRef.current.stop().catch(() => {})
+    },
+    [],
+  )
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (code.trim().length !== 6 || dni.trim().length < 8) return
-    verifyMutation.mutate()
-  }
-
-  const handleClearForNext = () => {
-    setCode('')
-    setDni('')
-    setPlate('')
-    setResult(null)
-    verifyMutation.reset()
-  }
-
-  const isMissingPlateWarning =
-    result && !result.authorized && result.message.toUpperCase().includes('FALTA PLACA')
+  const busy = residentMut.isPending || lookupMut.isPending
+  const err = residentMut.error || lookupMut.error
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white pb-12">
-      {/* Cabecera de Garita de Alto Contraste */}
-      <header className="bg-slate-950 border-b border-slate-800 px-5 py-4">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-emerald-400" />
-            </div>
-            <div>
-              <span className="text-[11px] font-extrabold uppercase tracking-widest text-emerald-400">
-                GARITA OFICIAL • {session.villa_id}
-              </span>
-              <h1 className="text-lg font-black">Vigilante: {session.username}</h1>
+    <div className="space-y-5">
+      {err && (
+        <div className="rounded-3xl p-5 border-4 border-berry-500 bg-berry-50">
+          <div className="flex items-start gap-3">
+            <XCircle className="w-10 h-10 text-berry-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs font-black uppercase tracking-widest text-berry-700">No abrir</p>
+              <p className="text-lg font-black text-berry-900">{errorMessage(err, 'Código no válido')}</p>
             </div>
           </div>
+          <Button variant="berry" className="w-full mt-4" onClick={clear}>
+            <RotateCcw className="w-4 h-4" /> Intentar de nuevo
+          </Button>
+        </div>
+      )}
+
+      {resident && <ResidentResult r={resident} onNext={clear} />}
+      {pass && passRef && <PassCheckIn pass={pass} passRef={passRef} onDone={clear} />}
+
+      {!resident && !pass && (
+        <>
+          {cameraError && <Alert tone="warn" onClose={() => setCameraError(null)}>{cameraError}</Alert>}
+          {scannerOpen ? (
+            <Card className="p-4 space-y-3 border-2 border-gold-400">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-pine-700">Apunta al QR o carnet</span>
+                <Button variant="berry" size="sm" onClick={stopScanner}>
+                  <CameraOff className="w-4 h-4" /> Cerrar
+                </Button>
+              </div>
+              <div id="garita-qr-reader" className="w-full overflow-hidden rounded-2xl bg-black min-h-[260px]" />
+            </Card>
+          ) : (
+            <Button size="lg" className="w-full py-6 text-lg" onClick={startScanner} loading={busy}>
+              <Camera className="w-7 h-7" /> Escanear QR o carnet
+            </Button>
+          )}
+
+          <Card className="p-5">
+            <form
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault()
+                if (manual.trim()) handleText(manual)
+              }}
+              className="space-y-3"
+            >
+              <Label htmlFor="manual-code">O escribe el código del pase</Label>
+              <div className="flex gap-2">
+                <input
+                  id="manual-code"
+                  maxLength={80}
+                  placeholder="EJ: 9X4K2M"
+                  value={manual}
+                  onChange={(e) => setManual(e.target.value.toUpperCase().replace(/\s/g, ''))}
+                  className={`${inputClass} font-mono text-xl tracking-[0.25em] uppercase text-center`}
+                />
+                <Button type="submit" variant="gold" loading={busy} aria-label="Buscar pase">
+                  <Search className="w-5 h-5" />
+                </Button>
+              </div>
+            </form>
+          </Card>
 
           <button
-            onClick={onLogout}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            type="button"
+            onClick={() => setShowManualResident((v) => !v)}
+            className="w-full text-sm font-extrabold text-berry-700 hover:underline cursor-pointer"
           >
-            <LogOut className="w-4 h-4" />
-            Salir
+            {showManualResident ? 'Ocultar' : '¿Residente sin celular? Registrar a mano'}
           </button>
+          {showManualResident && (
+            <ManualResident onDone={(r) => setResident(r)} />
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function ManualResident({ onDone }: { onDone: (r: ResidentEntryView) => void }) {
+  const [phone, setPhone] = useState('')
+  const [lot, setLot] = useState('')
+  const mut = useMutation({
+    mutationFn: () => koloalaApi.residentEntry({ phone: phone.trim(), lot_id: lot.trim() }),
+    onSuccess: onDone,
+  })
+  return (
+    <Card className="p-5">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (phone.length === 9 && lot.trim()) mut.mutate()
+        }}
+        className="space-y-3"
+      >
+        {mut.isError && <Alert tone="error">{errorMessage(mut.error, 'No encontrado')}</Alert>}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label htmlFor="mr-lot">Lote</Label>
+            <input id="mr-lot" placeholder="P20" value={lot} onChange={(e) => setLot(e.target.value.toUpperCase())} className={`${inputClass} uppercase`} />
+          </div>
+          <div>
+            <Label htmlFor="mr-phone">Celular que dicta</Label>
+            <input
+              id="mr-phone"
+              inputMode="numeric"
+              placeholder="9XXXXXXXX"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 9))}
+              className={`${inputClass} font-mono`}
+            />
+          </div>
         </div>
-      </header>
+        <Button type="submit" variant="gold" className="w-full" loading={mut.isPending}>
+          Registrar ingreso del residente
+        </Button>
+      </form>
+    </Card>
+  )
+}
 
-      <main className="max-w-lg mx-auto px-4 pt-5 space-y-5">
-        {/* SEMÁFORO DE RESULTADO DE GARITA */}
-        {result && (
-          <div
-            className={`rounded-3xl p-6 border-4 shadow-2xl transition-all ${
-              result.authorized
-                ? 'bg-emerald-950 border-emerald-400 text-emerald-50'
-                : isMissingPlateWarning
-                  ? 'bg-amber-950 border-amber-400 text-amber-50'
-                  : 'bg-red-950 border-red-500 text-red-50'
-            }`}
-          >
-            <div className="flex items-start gap-4">
-              {result.authorized ? (
-                <CheckCircle2 className="w-14 h-14 text-emerald-400 shrink-0" />
-              ) : isMissingPlateWarning ? (
-                <AlertTriangle className="w-14 h-14 text-amber-400 shrink-0" />
-              ) : (
-                <XCircle className="w-14 h-14 text-red-400 shrink-0" />
-              )}
+function ResidentResult({ r, onNext }: { r: ResidentEntryView; onNext: () => void }) {
+  return (
+    <div className="rounded-3xl p-6 border-4 border-pine-500 bg-pine-50 shadow-xl">
+      <div className="flex items-start gap-4">
+        <CheckCircle2 className="w-14 h-14 text-pine-600 shrink-0" />
+        <div className="flex-1">
+          <p className="text-xs font-black uppercase tracking-widest text-pine-700">Abrir • ingreso registrado {formatTime(r.at)}</p>
+          <p className="text-2xl font-black text-pine-950 leading-tight mt-1">{r.message}</p>
+          {r.warnings.map((w) => (
+            <p key={w} className="mt-2 text-sm font-extrabold text-gold-700 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" /> {w}
+            </p>
+          ))}
+        </div>
+      </div>
+      <Button className="w-full mt-5" size="lg" onClick={onNext}>
+        <RotateCcw className="w-5 h-5" /> Siguiente
+      </Button>
+    </div>
+  )
+}
 
-              <div className="flex-1">
-                <div className="text-xs font-black uppercase tracking-widest opacity-80">
-                  {result.authorized
-                    ? 'PASE VÁLIDO • ABRIR TRANQUERA'
-                    : isMissingPlateWarning
-                      ? 'RETENER VEHÍCULO • COMPLETAR PLACA ABAJO'
-                      : 'ACCESO DENEGADO • NO ABRIR'}
-                </div>
-                <h2 className="text-xl font-black mt-1 leading-snug">{result.message}</h2>
+// ---------------------------------------------------------------------------
+// Check-in de un pase de visita (grupo)
+// ---------------------------------------------------------------------------
+type RowState = { enters: boolean; verification: Verification | ''; vouchedBy: string }
 
-                {result.lot_id && (
-                  <div className="mt-4 pt-3 border-t border-white/15 grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-xs opacity-70 block">Destino:</span>
-                      <strong className="text-lg font-black">
-                        {result.villa_id}-{result.lot_id}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-xs opacity-70 block">Familia / Propietario:</span>
-                      <strong className="font-bold">{result.owner_name || 'Registrado'}</strong>
-                    </div>
-                    {result.checked_in_dni && (
-                      <div>
-                        <span className="text-xs opacity-70 block">DNI Registrado:</span>
-                        <strong className="font-mono">{result.checked_in_dni}</strong>
-                      </div>
-                    )}
-                    {result.checked_in_plate && (
-                      <div>
-                        <span className="text-xs opacity-70 block">Placa Registrada:</span>
-                        <strong className="font-mono">{result.checked_in_plate}</strong>
+function PassCheckIn({ pass, passRef, onDone }: { pass: GuardPassView; passRef: string; onDone: () => void }) {
+  const needsPlate = pass.kind === 'TAXI' || pass.kind === 'DELIVERY'
+  const [rows, setRows] = useState<Record<number, RowState>>(() =>
+    Object.fromEntries(pass.attendees.map((a) => [a.attendee_no, { enters: true, verification: '', vouchedBy: '' }])),
+  )
+  const [extra, setExtra] = useState<AttendeeDraft[]>(pass.attendees.length === 0 ? [emptyAttendee()] : [])
+  const [plate, setPlate] = useState(pass.vehicle_plate ?? '')
+  const [done, setDone] = useState<GuardPassView | null>(null)
+
+  const mut = useMutation({
+    mutationFn: () => {
+      const entries: AttendeeCheckIn[] = pass.attendees
+        .filter((a) => rows[a.attendee_no]?.enters)
+        .map((a) => {
+          const r = rows[a.attendee_no]
+          return {
+            attendee_no: a.attendee_no,
+            verification: r.vouchedBy ? 'VOUCHED' : r.verification || null,
+            vouched_by_no: r.vouchedBy ? Number(r.vouchedBy) : null,
+          }
+        })
+      toAttendeeInputs(extra).forEach((p) => entries.push({ person: p }))
+      return koloalaApi.guardCheckIn(passRef, entries, plate.trim() || null)
+    },
+    onSuccess: setDone,
+  })
+
+  if (done) {
+    const inCount = done.attendees.filter((a) => a.checked_in_at).length
+    return (
+      <div className="rounded-3xl p-6 border-4 border-pine-500 bg-pine-50 shadow-xl">
+        <div className="flex items-start gap-4">
+          <CheckCircle2 className="w-14 h-14 text-pine-600 shrink-0" />
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-pine-700">Abrir tranquera</p>
+            <p className="text-2xl font-black text-pine-950">{inCount} persona(s) → {done.destination_label}</p>
+          </div>
+        </div>
+        <Button className="w-full mt-5" size="lg" onClick={onDone}>
+          <RotateCcw className="w-5 h-5" /> Siguiente
+        </Button>
+      </div>
+    )
+  }
+
+  const canEnter = pass.authorized
+  const totalEntering = pass.attendees.filter((a) => rows[a.attendee_no]?.enters).length + toAttendeeInputs(extra).length
+
+  return (
+    <Card className={`p-5 space-y-4 border-4 ${canEnter ? 'border-gold-400' : 'border-berry-500'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Badge tone={pass.kind === 'GUEST' ? 'pine' : pass.kind === 'TAXI' ? 'gold' : 'berry'}>{KIND_LABEL[pass.kind]}</Badge>
+          <p className="text-2xl font-black text-pine-950 mt-1">{pass.destination_label}</p>
+          <p className="text-sm font-bold text-pine-800/70">
+            {pass.host_name ? `Invita: ${pass.host_name}` : pass.origin === 'PUBLIC_KIOSK' ? 'Pase del cartel de garita' : 'Registro de garita'}
+            {' • '}hasta {formatTime(pass.valid_until)}
+          </p>
+        </div>
+        <span className="font-mono font-black text-lg text-berry-700">{pass.short_code}</span>
+      </div>
+
+      {!canEnter && <Alert tone="error">{pass.message}</Alert>}
+
+      {canEnter && (
+        <>
+          {pass.attendees.length > 0 && (
+            <div className="space-y-2">
+              <Label>Personas del pase</Label>
+              {pass.attendees.map((a) => {
+                const r = rows[a.attendee_no]
+                const set = (patch: Partial<RowState>) => setRows((s) => ({ ...s, [a.attendee_no]: { ...s[a.attendee_no], ...patch } }))
+                return (
+                  <div key={a.attendee_no} className={`rounded-2xl border-2 p-3 ${r.enters ? 'border-pine-200 bg-pine-50/50' : 'border-pine-100 opacity-60'}`}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={r.enters} onChange={(e) => set({ enters: e.target.checked })} className="w-5 h-5 accent-pine-600" />
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-extrabold text-pine-950 truncate">{a.full_name}</span>
+                        <span className="block text-xs font-mono text-pine-800/60">
+                          {a.doc_display ? `${a.doc_type} ${a.doc_display}` : 'Sin documento'}
+                        </span>
+                      </span>
+                    </label>
+                    {r.enters && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <select
+                          aria-label={`Cómo se identificó ${a.full_name}`}
+                          value={r.vouchedBy ? 'VOUCHED' : r.verification}
+                          onChange={(e) => set({ verification: e.target.value as Verification | '', vouchedBy: e.target.value === 'VOUCHED' ? r.vouchedBy : '' })}
+                          className={`${inputClass} !py-2 text-sm`}
+                        >
+                          <option value="">Automático</option>
+                          {(Object.keys(VERIFICATION_LABEL) as Verification[]).map((v) => (
+                            <option key={v} value={v}>
+                              {VERIFICATION_LABEL[v]}
+                            </option>
+                          ))}
+                        </select>
+                        {(r.verification === 'VOUCHED' || r.vouchedBy) && (
+                          <select
+                            aria-label="Avalado por"
+                            value={r.vouchedBy}
+                            onChange={(e) => set({ vouchedBy: e.target.value })}
+                            className={`${inputClass} !py-2 text-sm`}
+                          >
+                            <option value="">¿Quién responde?</option>
+                            {pass.attendees
+                              .filter((o) => o.attendee_no !== a.attendee_no)
+                              .map((o) => (
+                                <option key={o.attendee_no} value={o.attendee_no}>
+                                  {o.full_name}
+                                </option>
+                              ))}
+                          </select>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
+                )
+              })}
             </div>
-
-            {result.authorized && (
-              <button
-                type="button"
-                onClick={handleClearForNext}
-                className="mt-5 w-full py-3.5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-black text-base flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <RotateCcw className="w-5 h-5" />
-                Listo — Siguiente Vehículo / Visita
-              </button>
-            )}
-          </div>
-        )}
-
-        {verifyMutation.isError && (
-          <div className="p-4 rounded-2xl bg-red-900/60 border-2 border-red-400 text-red-100 font-bold text-sm">
-            {verifyMutation.error instanceof Error
-              ? verifyMutation.error.message
-              : 'Error al verificar el código'}
-          </div>
-        )}
-
-        {cameraError && (
-          <div className="p-4 rounded-2xl bg-amber-900/60 border border-amber-400 text-amber-100 text-xs font-semibold">
-            {cameraError}
-          </div>
-        )}
-
-        {/* Visor de Cámara Lector QR para Garita */}
-        {scannerOpen && (
-          <div className="bg-slate-950 border-2 border-emerald-400 rounded-3xl p-4 space-y-3 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
-                Apunta la cámara al QR del visitante / conductor
-              </span>
-              <button
-                type="button"
-                onClick={stopCameraScanner}
-                className="px-3 py-1 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <CameraOff className="w-3.5 h-3.5" />
-                Cerrar Cámara
-              </button>
-            </div>
-            <div
-              id="koloala-qr-reader"
-              className="w-full overflow-hidden rounded-2xl bg-black min-h-[250px]"
-            />
-          </div>
-        )}
-
-        {/* Formulario de Control de Garita */}
-        <form
-          onSubmit={handleSubmit}
-          className="bg-slate-800/90 border border-slate-700 rounded-3xl p-5 sm:p-6 space-y-5 shadow-xl"
-        >
-          {/* Botón grande de Escanear QR con Cámara */}
-          {!scannerOpen && (
-            <button
-              type="button"
-              onClick={startCameraScanner}
-              className="w-full py-4 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-base shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2.5 cursor-pointer"
-            >
-              <Camera className="w-6 h-6" />
-              ESCANEAR QR CON CÁMARA
-            </button>
           )}
 
-          {/* 1. Código de 6 caracteres (se llena solo al escanear el QR o a mano) */}
-          <div>
-            <label className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-emerald-400 mb-2">
-              <KeySquare className="w-4 h-4" />
-              1. Código de Pase (Se llena al escanear QR o manual)
-            </label>
-            <input
-              type="text"
-              required
-              maxLength={6}
-              autoCapitalize="characters"
-              placeholder="EJ: 9X4K2M"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
-              className="w-full py-4 px-4 text-center text-3xl font-black tracking-[0.3em] font-mono uppercase rounded-2xl bg-slate-950 border-2 border-slate-600 focus:border-emerald-400 focus:outline-none text-white"
-            />
-          </div>
+          <details open={pass.attendees.length === 0} className="rounded-2xl bg-gold-50 border-2 border-gold-200 p-3">
+            <summary className="text-sm font-extrabold text-pine-900 cursor-pointer">Agregar personas que llegaron</summary>
+            <div className="mt-3">
+              <AttendeeEditor rows={extra} onChange={setExtra} minRows={0} />
+            </div>
+          </details>
 
-          {/* 2. DNI Obligatorio */}
           <div>
-            <label className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-sky-400 mb-2">
-              <IdCard className="w-4 h-4" />
-              2. DNI o Carnet del Visitante / Motorizado (Obligatorio)
-            </label>
+            <Label htmlFor="plate">Placa {needsPlate ? '(obligatoria)' : '(opcional)'}</Label>
             <input
-              ref={dniInputRef}
-              type="text"
-              required
-              inputMode="numeric"
-              minLength={8}
-              maxLength={12}
-              placeholder="Ej. 45891230"
-              value={dni}
-              onChange={(e) => setDni(e.target.value.replace(/[^0-9A-Za-z]/g, ''))}
-              className="w-full py-3.5 px-4 text-xl font-bold font-mono rounded-2xl bg-slate-950 border-2 border-slate-600 focus:border-sky-400 focus:outline-none text-white"
-            />
-          </div>
-
-          {/* 3. Placa del Vehículo */}
-          <div>
-            <label className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-amber-400 mb-2">
-              <CarFront className="w-4 h-4" />
-              3. Placa del Vehículo (Obligatorio en Taxi y Delivery)
-            </label>
-            <input
-              type="text"
+              id="plate"
               maxLength={10}
-              autoCapitalize="characters"
-              placeholder="Ej. ABC-123 (Dejar vacío si entra a pie)"
+              placeholder="ABC-123"
               value={plate}
               onChange={(e) => setPlate(e.target.value.toUpperCase())}
-              className="w-full py-3.5 px-4 text-xl font-bold font-mono uppercase rounded-2xl bg-slate-950 border-2 border-slate-600 focus:border-amber-400 focus:outline-none text-white"
+              className={`${inputClass} font-mono uppercase ${needsPlate && !plate ? '!border-gold-400' : ''}`}
             />
           </div>
 
-          <div className="pt-1 flex gap-3">
-            <button
-              type="button"
-              onClick={handleClearForNext}
-              className="px-4 py-4 rounded-2xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-sm cursor-pointer"
-            >
-              Limpiar
-            </button>
+          {mut.isError && <Alert tone="error">{errorMessage(mut.error, 'No se pudo registrar')}</Alert>}
 
-            <button
-              type="submit"
-              disabled={verifyMutation.isPending || code.length !== 6 || dni.length < 8}
-              className="flex-1 py-4 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-black text-lg shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer"
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onDone}>
+              Cancelar
+            </Button>
+            <Button
+              className="flex-1"
+              size="lg"
+              loading={mut.isPending}
+              disabled={totalEntering === 0 || (needsPlate && !plate.trim())}
+              onClick={() => mut.mutate()}
             >
-              {verifyMutation.isPending ? (
-                <>
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                  Verificando...
-                </>
-              ) : (
-                'VERIFICAR INGRESO'
-              )}
-            </button>
+              Dejar pasar ({totalEntering})
+            </Button>
           </div>
-        </form>
-      </main>
+        </>
+      )}
+      {!canEnter && (
+        <Button variant="ghost" className="w-full" onClick={onDone}>
+          <RotateCcw className="w-4 h-4" /> Volver
+        </Button>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Mesa del guardia: quien llega sin celular
+// ---------------------------------------------------------------------------
+function DeskTab() {
+  const catalog = useQuery({ queryKey: ['public-villa'], queryFn: koloalaApi.publicVilla })
+  const [dest, setDest] = useState('')
+  const [customLot, setCustomLot] = useState('')
+  const [rows, setRows] = useState<AttendeeDraft[]>([emptyAttendee()])
+  const [plate, setPlate] = useState('')
+  const [done, setDone] = useState<GuardPassView | null>(null)
+  const destination = dest === '__LOT__' ? customLot.trim() : dest
+
+  const mut = useMutation({
+    mutationFn: () =>
+      koloalaApi.guardDesk(
+        destination,
+        toAttendeeInputs(rows).map((p) => ({ person: p })),
+        plate.trim() || null,
+      ),
+    onSuccess: (r) => {
+      setDone(r)
+      setRows([emptyAttendee()])
+      setPlate('')
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      {done && (
+        <Alert tone="success" onClose={() => setDone(null)}>
+          Ingresaron {done.attendees.length} persona(s) a {done.destination_label}. Código {done.short_code}.
+        </Alert>
+      )}
+      <Card className="p-5 space-y-4">
+        <h2 className="text-base font-black text-pine-950">Registrar visita en mesa</h2>
+        <p className="text-xs font-semibold text-pine-800/70 -mt-2">Para quien no tiene celular. Mismo formulario que el cartel de garita.</p>
+        {mut.isError && <Alert tone="error">{errorMessage(mut.error, 'No se pudo registrar')}</Alert>}
+        <div>
+          <Label htmlFor="desk-dest">¿A dónde va?</Label>
+          <select id="desk-dest" value={dest} onChange={(e) => setDest(e.target.value)} className={inputClass}>
+            <option value="">Elige un destino</option>
+            {catalog.data?.catalog.map((c) => (
+              <option key={c.lot_id} value={c.lot_id}>
+                {c.display_name}
+              </option>
+            ))}
+            <option value="__LOT__">Una casa (escribir lote)</option>
+          </select>
+          {dest === '__LOT__' && (
+            <input
+              aria-label="Lote"
+              placeholder="Ej. P20"
+              value={customLot}
+              onChange={(e) => setCustomLot(e.target.value.toUpperCase())}
+              className={`${inputClass} mt-2 uppercase`}
+            />
+          )}
+        </div>
+        <AttendeeEditor rows={rows} onChange={setRows} />
+        <div>
+          <Label htmlFor="desk-plate">Placa (opcional)</Label>
+          <input id="desk-plate" placeholder="ABC-123" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} className={`${inputClass} font-mono uppercase`} />
+        </div>
+        <Button
+          size="lg"
+          className="w-full"
+          loading={mut.isPending}
+          disabled={!destination || toAttendeeInputs(rows).length === 0}
+          onClick={() => mut.mutate()}
+        >
+          Registrar y dejar pasar
+        </Button>
+      </Card>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Bitácora 24 h (DNI enmascarado salvo "mostrar", que queda auditado)
+// ---------------------------------------------------------------------------
+function LogTab() {
+  const [reveal, setReveal] = useState(false)
+  const log = useQuery({ queryKey: ['daily-log', reveal], queryFn: () => koloalaApi.dailyLog(reveal), refetchInterval: 30_000 })
+  const d = log.data
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          ['Visitas', d?.total_people_in ?? 0, 'text-berry-600'],
+          ['Pases', d?.checked_in_passes ?? 0, 'text-gold-600'],
+          ['Residentes', d?.resident_entries ?? 0, 'text-pine-600'],
+        ].map(([label, n, cls]) => (
+          <Card key={label as string} className="p-3 text-center">
+            <p className={`text-3xl font-black ${cls}`}>{n as number}</p>
+            <p className="text-[11px] font-extrabold uppercase text-pine-800/60">{label as string}</p>
+          </Card>
+        ))}
+      </div>
+      <div className="flex justify-end">
+        <Button
+          variant={reveal ? 'berry' : 'ghost'}
+          size="sm"
+          onClick={() => {
+            if (reveal || window.confirm('Ver DNIs completos queda registrado a tu nombre. ¿Continuar?')) setReveal(!reveal)
+          }}
+        >
+          {reveal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {reveal ? 'Ocultar DNIs' : 'Mostrar DNIs'}
+        </Button>
+      </div>
+      {log.isError && <Alert tone="error">{errorMessage(log.error, 'No se pudo cargar')}</Alert>}
+
+      <Card className="p-2">
+        {!d || (d.items.length === 0 && d.resident_items.length === 0) ? (
+          <EmptyState icon={<ClipboardList className="w-8 h-8" />}>Sin movimientos en las últimas 24 horas.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-pine-50">
+            {d.resident_items.map((r, i) => (
+              <li key={`r${i}`} className="p-3 flex items-center gap-3">
+                <Home className="w-5 h-5 text-pine-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-pine-950 truncate">{r.message}</p>
+                  <p className="text-xs font-semibold text-pine-800/60">{r.method === 'QR' ? 'Carnet' : 'Manual'}{r.vehicle_plate ? ` • ${r.vehicle_plate}` : ''}</p>
+                </div>
+                <span className="text-xs font-black text-pine-700">{formatTime(r.at)}</span>
+              </li>
+            ))}
+            {d.items.map((p) => (
+              <li key={p.short_code} className="p-3">
+                <div className="flex items-center gap-2">
+                  <Badge tone={p.checked_in_at ? 'pine' : p.status === 'EXPIRED' ? 'muted' : 'gold'}>
+                    {p.checked_in_at ? 'Ingresó' : p.status === 'EXPIRED' ? 'Vencido' : 'Pendiente'}
+                  </Badge>
+                  <span className="font-extrabold text-pine-950 flex-1 truncate">{p.destination_label}</span>
+                  <span className="text-xs font-black text-pine-700">{formatTime(p.checked_in_at ?? p.created_at)}</span>
+                </div>
+                {p.attendees.length > 0 && (
+                  <ul className="mt-1.5 ml-1 space-y-0.5">
+                    {p.attendees.map((a) => (
+                      <li key={a.attendee_no} className="text-xs text-pine-900 font-semibold">
+                        {a.full_name}
+                        <span className="font-mono text-pine-800/60"> {a.doc_display ?? '—'}</span>
+                        {a.verification && <span className="text-berry-700"> • {VERIFICATION_LABEL[a.verification]}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   )
 }

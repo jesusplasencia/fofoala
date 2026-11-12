@@ -1,136 +1,149 @@
 import QRCode from 'qrcode'
-import { type GuestPassResponse } from './api'
+import { formatDateTime, getVillaDisplayName, type InviteResponse, KIND_LABEL } from './api'
 
-/**
- * Formato del QR leído en garita:
- * KOLOALA:VC3:9X4K2M (también soporta pegar o leer solo los 6 caracteres)
- */
-export function buildQrPayload(pass: GuestPassResponse): string {
-  return `KOLOALA:${pass.villa_id}:${pass.code}`
+/** Enlace del pase: el QR lleva el link para que el invitado vea su pase y complete su grupo. */
+export function buildShareUrl(pass: Pick<InviteResponse, 'token'>): string {
+  return `${window.location.origin}/v/${pass.token}`
 }
 
-export function extractPassCodeFromScannedText(rawText: string): string {
-  const cleaned = rawText.trim().toUpperCase()
-  if (cleaned.startsWith('KOLOALA:')) {
-    const parts = cleaned.split(':')
-    const candidate = parts[parts.length - 1] || ''
-    return candidate.replace(/[^A-Z0-9]/g, '').slice(0, 6)
+export type ScanResult =
+  | { type: 'carnet'; payload: string }
+  | { type: 'visit'; ref: string }
+  | { type: 'unknown' }
+
+/**
+ * Interpreta lo que lee la cámara de garita:
+ * - Carnet de residente: "R1.VC3.916220518.<ventana>.<firma>"
+ * - Pase de visita: enlace ".../v/<token>", token suelto o código de 6 caracteres
+ */
+export function parseScan(raw: string): ScanResult {
+  const text = raw.trim()
+  if (text.startsWith('R1.')) return { type: 'carnet', payload: text }
+  const fromUrl = text.match(/\/v\/([A-Za-z0-9_-]{10,})/)
+  if (fromUrl) return { type: 'visit', ref: fromUrl[1] }
+  if (/^[A-Za-z0-9_-]{20,}$/.test(text)) return { type: 'visit', ref: text }
+  const code = text.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (code.length === 6) return { type: 'visit', ref: code }
+  return { type: 'unknown' }
+}
+
+const QR_COLORS = { dark: '#061f12', light: '#ffffff' }
+
+export function qrDataUrl(text: string, width = 340): Promise<string> {
+  return QRCode.toDataURL(text, { width, margin: 2, errorCorrectionLevel: 'M', color: QR_COLORS })
+}
+
+function drawSnowflake(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 3
+  ctx.lineCap = 'round'
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r)
+    ctx.stroke()
   }
-  return cleaned.replace(/[^A-Z0-9]/g, '').slice(0, 6)
+  ctx.restore()
 }
 
-/**
- * Genera una imagen DataURL del QR puro (blanco y negro de alto contraste)
- * para mostrar en la pantalla del residente.
- */
-export async function generateQrDataUrl(pass: GuestPassResponse): Promise<string> {
-  return QRCode.toDataURL(buildQrPayload(pass), {
-    width: 340,
-    margin: 2,
-    errorCorrectionLevel: 'H',
-    color: {
-      dark: '#022c22',
-      light: '#ffffff',
-    },
-  })
-}
-
-/**
- * Dibuja un "Boarding Pass / Tarjeta Oficial de Ingreso" en alta resolución (PNG)
- * con el logo/cabecera de la Villa, lote destino, QR grande, código de 6 dígitos
- * y hora de vencimiento, listo para descargar en el teléfono o compartir por WhatsApp.
- */
-export async function generatePassCardBlob(pass: GuestPassResponse): Promise<Blob> {
+/** Tarjeta navideña PNG del pase (para guardar o compartir por WhatsApp). */
+export async function generatePassCardBlob(pass: InviteResponse): Promise<Blob> {
   const canvas = document.createElement('canvas')
   canvas.width = 800
-  canvas.height = 1120
+  canvas.height = 1140
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('No se pudo inicializar el lienzo de imagen')
+  if (!ctx) throw new Error('No se pudo crear la imagen')
 
-  // Fondo general
-  ctx.fillStyle = '#064e3b'
+  // Fondo pino con brillo
+  const bg = ctx.createLinearGradient(0, 0, 0, canvas.height)
+  bg.addColorStop(0, '#11472a')
+  bg.addColorStop(1, '#061f12')
+  ctx.fillStyle = bg
   ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ;[
+    [70, 70, 22],
+    [730, 110, 16],
+    [60, 1060, 18],
+    [740, 1080, 24],
+    [700, 560, 12],
+  ].forEach(([x, y, r]) => drawSnowflake(ctx, x, y, r, 'rgba(255,255,255,0.35)'))
 
-  // Tarjeta blanca central
-  ctx.fillStyle = '#ffffff'
+  // Tarjeta blanca
+  ctx.fillStyle = '#fffaf0'
   ctx.beginPath()
-  ctx.roundRect(48, 48, 704, 1024, 40)
+  ctx.roundRect(48, 48, 704, 1044, 40)
   ctx.fill()
 
-  // Cabecera verde oscura dentro de la tarjeta
-  ctx.fillStyle = '#022c22'
+  // Cabecera roja
+  ctx.fillStyle = '#c21616'
   ctx.beginPath()
-  ctx.roundRect(48, 48, 704, 195, [40, 40, 0, 0])
+  ctx.roundRect(48, 48, 704, 200, [40, 40, 0, 0])
   ctx.fill()
 
-  // Texto cabecera
-  ctx.fillStyle = '#6ee7b7'
-  ctx.font = 'bold 24px system-ui, -apple-system, sans-serif'
+  // Franja bastón de caramelo
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(48, 248, 704, 14)
+  ctx.clip()
+  for (let x = 30; x < 800; x += 40) {
+    ctx.fillStyle = (x / 40) % 2 < 1 ? '#16703b' : '#ffffff'
+    ctx.beginPath()
+    ctx.moveTo(x, 262)
+    ctx.lineTo(x + 20, 248)
+    ctx.lineTo(x + 40, 248)
+    ctx.lineTo(x + 20, 262)
+    ctx.fill()
+  }
+  ctx.restore()
+
   ctx.textAlign = 'center'
-  ctx.fillText(`PASE OFICIAL DE GARITA • ${pass.villa_id}`, 400, 110)
-
+  ctx.fillStyle = '#ffd447'
+  ctx.font = '800 24px Nunito, system-ui, sans-serif'
+  ctx.fillText(`✦ ${getVillaDisplayName(pass.villa_id).toUpperCase()} ✦`, 400, 108)
   ctx.fillStyle = '#ffffff'
-  ctx.font = '900 48px system-ui, -apple-system, sans-serif'
-  ctx.fillText(`CASA ${pass.lot_id}`, 400, 172)
+  ctx.font = '900 50px Nunito, system-ui, sans-serif'
+  ctx.fillText(pass.destination_label.toUpperCase(), 400, 172)
+  ctx.fillStyle = '#ffe585'
+  ctx.font = '800 24px Nunito, system-ui, sans-serif'
+  ctx.fillText(`PASE DE ${KIND_LABEL[pass.kind].toUpperCase()} • ${pass.party_size_expected} PERSONA(S)`, 400, 220)
 
-  const passTypeLabel =
-    pass.pass_type === 'DELIVERY'
-      ? 'DELIVERY (45 MIN)'
-      : pass.pass_type === 'TAXI'
-        ? 'TAXI / MOVILIDAD (30 MIN)'
-        : 'VISITA / INVITADO (8 HORAS)'
-
-  ctx.fillStyle = '#d1fae5'
-  ctx.font = 'bold 22px system-ui, -apple-system, sans-serif'
-  ctx.fillText(passTypeLabel, 400, 215)
-
-  // Dibujar el QR en el centro
+  // QR
   const qrCanvas = document.createElement('canvas')
-  await QRCode.toCanvas(qrCanvas, buildQrPayload(pass), {
+  await QRCode.toCanvas(qrCanvas, buildShareUrl(pass), {
     width: 440,
     margin: 2,
-    errorCorrectionLevel: 'H',
-    color: {
-      dark: '#022c22',
-      light: '#ffffff',
-    },
+    errorCorrectionLevel: 'M',
+    color: QR_COLORS,
   })
-  ctx.drawImage(qrCanvas, 180, 275, 440, 440)
-
-  // Caja del código alfanumérico de 6 caracteres
-  ctx.fillStyle = '#0f172a'
+  ctx.strokeStyle = '#fbbf24'
+  ctx.lineWidth = 8
   ctx.beginPath()
-  ctx.roundRect(120, 740, 560, 125, 24)
+  ctx.roundRect(170, 290, 460, 460, 24)
+  ctx.stroke()
+  ctx.drawImage(qrCanvas, 180, 300, 440, 440)
+
+  // Código manual
+  ctx.fillStyle = '#11472a'
+  ctx.beginPath()
+  ctx.roundRect(140, 780, 520, 120, 24)
   ctx.fill()
+  ctx.fillStyle = '#ffd447'
+  ctx.font = '900 66px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+  ctx.fillText(pass.short_code.split('').join(' '), 400, 862)
 
-  ctx.fillStyle = '#34d399'
-  ctx.font = '900 68px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
-  ctx.fillText(pass.code.split('').join(' '), 400, 825)
-
-  // Información de expiración y nota
-  const expiresTime = new Date(pass.expires_at).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
-  ctx.fillStyle = '#334155'
-  ctx.font = 'bold 25px system-ui, -apple-system, sans-serif'
-  ctx.fillText(`Válido hasta las ${expiresTime}`, 400, 920)
-
-  if (pass.visitor_info) {
-    ctx.fillStyle = '#0f172a'
-    ctx.font = 'bold 24px system-ui, -apple-system, sans-serif'
-    ctx.fillText(`Detalle: ${pass.visitor_info}`, 400, 962)
-  }
-
-  ctx.fillStyle = '#64748b'
-  ctx.font = '600 20px system-ui, -apple-system, sans-serif'
-  ctx.fillText('Muestre este QR en garita junto con su DNI físico', 400, 1020)
+  ctx.fillStyle = '#135a31'
+  ctx.font = '800 25px Nunito, system-ui, sans-serif'
+  ctx.fillText(`Válido hasta ${formatDateTime(pass.valid_until)}`, 400, 952)
+  ctx.fillStyle = '#6d1717'
+  ctx.font = '700 21px Nunito, system-ui, sans-serif'
+  ctx.fillText('Muestra este QR en garita. Si no traes DNI físico, igual puedes ingresar.', 400, 1000)
+  ctx.fillStyle = '#c21616'
+  ctx.font = '700 30px "Mountains of Christmas", Nunito, cursive'
+  ctx.fillText('¡Felices Fiestas!', 400, 1052)
 
   return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob)
-      else reject(new Error('No se pudo exportar la imagen PNG del pase'))
-    }, 'image/png')
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo exportar la imagen'))), 'image/png')
   })
 }
