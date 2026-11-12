@@ -13,7 +13,7 @@ const queryClient = new QueryClient({
   },
 })
 
-/** Rutas públicas (sin login): /visita (cartel de garita) y /v/{token} (enlace de invitación). */
+/** Rutas públicas (sin login): /visita (vitrina informativa) y /v/{token} (enlace de invitación). */
 function publicRoute(): { kind: 'kiosk' } | { kind: 'invite'; token: string } | null {
   const path = window.location.pathname
   if (/^\/visita\/?$/.test(path)) return { kind: 'kiosk' }

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Gift, Phone, QrCode, Smartphone, TreePine } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Gift, Phone, Smartphone, Store, TreePine } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { type AuthSession, detectVillaId, getVillaDisplayName, koloalaApi, saveSession } from '../lib/api'
 import { PasswordInput } from './PasswordInput'
@@ -154,8 +154,8 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
                   href="/visita"
                   className="flex items-center justify-center gap-2 text-sm font-extrabold text-berry-700 hover:text-berry-800 hover:underline"
                 >
-                  <QrCode className="w-4 h-4" />
-                  ¿Vienes de visita? Saca tu pase aquí
+                  <Store className="w-4 h-4" />
+                  ¿Vienes de visita? Mira qué hay en la villa
                 </a>
               </form>
             )}
@@ -166,13 +166,17 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
                   <Gift className="w-8 h-8 text-berry-600" />
                 </div>
                 <p className="text-pine-900 font-bold">
-                  {notice || 'Este número no tiene cuenta. Si vienes de visita, pide a tu anfitrión un QR o escanea el cartel de la garita.'}
+                  Este número no tiene cuenta.
                 </p>
+                <ul className="text-left text-sm font-semibold text-pine-900 space-y-2 bg-gold-50 border-2 border-gold-200 rounded-2xl p-4">
+                  <li>🏠 Si visitas una casa, pide a tu anfitrión que te envíe su QR.</li>
+                  <li>🪪 Si vas a un negocio o área común, acércate a la garita con tu DNI.</li>
+                </ul>
                 <a
                   href="/visita"
-                  className="block w-full py-4 rounded-2xl bg-berry-600 hover:bg-berry-700 text-white font-extrabold shadow-md"
+                  className="block w-full py-3 rounded-2xl bg-pine-50 hover:bg-pine-100 text-pine-800 border border-pine-200 font-extrabold"
                 >
-                  Sacar mi pase de visita
+                  Ver negocios y áreas de la villa
                 </a>
                 <button type="button" onClick={reset} className="text-sm font-extrabold text-pine-700 hover:underline cursor-pointer">
                   Probar con otro número
@@ -217,13 +221,11 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
                     label="PIN o contraseña"
                     value={password}
                     onChange={setPassword}
-                    autoPaste={!!notice}
+                    autoPaste
                   />
-                  {notice && (
-                    <p className="text-[11px] font-semibold text-pine-800/60 mt-1.5">
-                      Copia el PIN del mensaje de WhatsApp y toca la caja: se pega solo.
-                    </p>
-                  )}
+                  <p className="text-[11px] font-semibold text-pine-800/60 mt-1.5">
+                    Copia el PIN del mensaje de WhatsApp y toca la caja: se pega solo.
+                  </p>
                 </div>
                 <Button type="submit" size="lg" className="w-full" loading={loading}>
                   Ingresar a {villaName}

@@ -7,7 +7,8 @@ export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'GUARD' | 'RESIDENT'
 export type MembershipRole = 'ANCHOR' | 'HOUSEHOLD'
 export type VisitKind = 'GUEST' | 'TAXI' | 'DELIVERY'
 export type VisitStatus = 'ACTIVE' | 'USED' | 'EXPIRED'
-export type VisitOrigin = 'HOST_INVITE' | 'PUBLIC_KIOSK' | 'GUARD_DESK'
+export type VisitOrigin = 'HOST_INVITE' | 'GUARD_DESK'
+export type DocSource = 'OCR' | 'MANUAL'
 export type DocType = 'DNI' | 'CE' | 'PASAPORTE' | 'NINGUNO'
 export type Verification = 'DOC_SHOWN' | 'DOC_DIGITAL' | 'DECLARED' | 'VOUCHED'
 export type LotType = 'LOT' | 'MINI_LOT' | 'COMMON_AREA'
@@ -47,6 +48,7 @@ export interface AttendeeInput {
   last_names?: string | null
   doc_type?: DocType | null
   doc_number?: string | null
+  doc_source?: DocSource | null
 }
 
 export interface InviteResponse {
@@ -77,6 +79,7 @@ export interface GuardAttendeeView {
   full_name: string
   doc_type: DocType
   doc_display: string | null
+  doc_source?: DocSource | null
   verification: Verification | null
   vouched_by_no: number | null
   checked_in_at: string | null
@@ -374,8 +377,6 @@ export const koloalaApi = {
 
   // ---- Público (sin login) ----
   publicVilla: () => publicRequest<{ villa_id: string; catalog: CatalogItem[] }>('/api/v1/public/villa'),
-  createPublicVisit: (payload: { destination_lot_id: string; attendees: AttendeeInput[]; vehicle_plate?: string | null }) =>
-    publicRequest<InviteResponse>('/api/v1/public/visits', { method: 'POST', body: json(payload) }),
   viewPublicVisit: (token: string) =>
     publicRequest<PublicPassView>(`/api/v1/public/visits/${encodeURIComponent(token)}`),
   addVisitAttendees: (token: string, attendees: AttendeeInput[]) =>

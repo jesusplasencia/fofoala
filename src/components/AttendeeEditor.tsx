@@ -7,6 +7,8 @@ export interface AttendeeDraft {
   last_names: string
   doc_type: DocType
   doc_number: string
+  /** Número tal como lo leyó el OCR; si el guardia lo edita, deja de contar como OCR. */
+  ocr_doc?: string
 }
 
 export const emptyAttendee = (): AttendeeDraft => ({
@@ -27,7 +29,8 @@ export function toAttendeeInputs(rows: AttendeeDraft[]): AttendeeInput[] {
         last_names: r.last_names.trim() || null,
         doc_type: num ? r.doc_type : 'NINGUNO',
         doc_number: num || null,
-      }
+        doc_source: num ? (r.ocr_doc && r.ocr_doc === num ? 'OCR' : 'MANUAL') : null,
+      } as AttendeeInput
     })
 }
 

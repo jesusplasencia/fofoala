@@ -1,4 +1,4 @@
-import { ClipboardPaste, Eye, EyeOff, KeyRound } from 'lucide-react'
+import { Eye, EyeOff, KeyRound } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { inputClass } from './ui'
 
@@ -30,9 +30,15 @@ interface Props {
 export function PasswordInput({ id, value, onChange, placeholder = '••••••••', autoFocus, autoComplete = 'current-password', autoPaste, label }: Props) {
   const [visible, setVisible] = useState(false)
   const [pasted, setPasted] = useState(false)
-  const triedRef = useRef(false)
+  const readingRef = useRef(false)
 
+  /**
+   * Se llama dentro del mismo toque del usuario (requisito de los navegadores móviles):
+   * Android pide permiso la primera vez y luego pega solo; iPhone muestra su burbuja "Pegar".
+   */
   const pasteFromClipboard = async () => {
+    if (!autoPaste || value || readingRef.current || !navigator.clipboard?.readText) return
+    readingRef.current = true
     try {
       const text = await navigator.clipboard.readText()
       const pwd = extractFromClipboard(text)
@@ -41,7 +47,9 @@ export function PasswordInput({ id, value, onChange, placeholder = '••••
         setPasted(true)
       }
     } catch {
-      // el navegador no dio permiso: el usuario puede pegar a mano o con el botón
+      // sin permiso: el usuario puede pegar a mano con el menú del teclado
+    } finally {
+      readingRef.current = false
     }
   }
 
@@ -62,28 +70,15 @@ export function PasswordInput({ id, value, onChange, placeholder = '••••
           maxLength={64}
           placeholder={placeholder}
           value={value}
-          onFocus={() => {
-            if (autoPaste && !value && !triedRef.current) {
-              triedRef.current = true
-              pasteFromClipboard()
-            }
-          }}
+          onPointerDown={pasteFromClipboard}
+          onFocus={pasteFromClipboard}
           onChange={(e) => {
             onChange(e.target.value)
             setPasted(false)
           }}
-          className={`${inputClass} pl-12 pr-24 text-lg ${visible ? 'font-mono text-pine-600 tracking-wide' : 'tracking-widest'}`}
+          className={`${inputClass} pl-12 pr-14 text-lg ${visible ? 'font-mono text-pine-600 tracking-wide' : 'tracking-widest'}`}
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={pasteFromClipboard}
-            className="p-2 rounded-xl text-pine-700 hover:bg-pine-50 cursor-pointer"
-            aria-label="Pegar desde el portapapeles"
-            title="Pegar"
-          >
-            <ClipboardPaste className="w-5 h-5" />
-          </button>
           <button
             type="button"
             onClick={() => setVisible((v) => !v)}

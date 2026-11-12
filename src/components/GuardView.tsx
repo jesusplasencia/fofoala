@@ -11,6 +11,7 @@ import {
   Home,
   RotateCcw,
   ScanLine,
+  ScanText,
   Search,
   Shield,
   UserPlus,
@@ -28,8 +29,10 @@ import {
   type Verification,
   VERIFICATION_LABEL,
 } from '../lib/api'
+import { type DniData } from '../lib/mrz'
 import { parseScan } from '../lib/passCard'
 import { type AttendeeDraft, AttendeeEditor, emptyAttendee, toAttendeeInputs } from './AttendeeEditor'
+import { DniCapture } from './DniCapture'
 import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
@@ -358,7 +361,7 @@ function PassCheckIn({ pass, passRef, onDone }: { pass: GuardPassView; passRef: 
           <Badge tone={pass.kind === 'GUEST' ? 'pine' : pass.kind === 'TAXI' ? 'gold' : 'berry'}>{KIND_LABEL[pass.kind]}</Badge>
           <p className="text-2xl font-black text-pine-950 mt-1">{pass.destination_label}</p>
           <p className="text-sm font-bold text-pine-800/70">
-            {pass.host_name ? `Invita: ${pass.host_name}` : pass.origin === 'PUBLIC_KIOSK' ? 'Pase del cartel de garita' : 'Registro de garita'}
+            {pass.host_name ? `Invita: ${pass.host_name}` : 'Registro de garita'}
             {' • '}hasta {formatTime(pass.valid_until)}
           </p>
         </div>
@@ -473,64 +476,101 @@ function PassCheckIn({ pass, passRef, onDone }: { pass: GuardPassView; passRef: 
 }
 
 // ---------------------------------------------------------------------------
-// Mesa del guardia: quien llega sin celular
+// Mesa: visitante sin invitación → DNI físico (foto del reverso, OCR) → servicio del catálogo
 // ---------------------------------------------------------------------------
 function DeskTab() {
   const catalog = useQuery({ queryKey: ['public-villa'], queryFn: koloalaApi.publicVilla })
   const [dest, setDest] = useState('')
-  const [customLot, setCustomLot] = useState('')
-  const [rows, setRows] = useState<AttendeeDraft[]>([emptyAttendee()])
+  const [rows, setRows] = useState<AttendeeDraft[]>([])
   const [plate, setPlate] = useState('')
+  const [camera, setCamera] = useState(false)
+  const [lastRead, setLastRead] = useState<DniData | null>(null)
   const [done, setDone] = useState<GuardPassView | null>(null)
-  const destination = dest === '__LOT__' ? customLot.trim() : dest
 
   const mut = useMutation({
     mutationFn: () =>
       koloalaApi.guardDesk(
-        destination,
+        dest,
         toAttendeeInputs(rows).map((p) => ({ person: p })),
         plate.trim() || null,
       ),
     onSuccess: (r) => {
       setDone(r)
-      setRows([emptyAttendee()])
+      setRows([])
       setPlate('')
+      setDest('')
+      setLastRead(null)
     },
   })
+
+  const onDni = (d: DniData) => {
+    setCamera(false)
+    setLastRead(d)
+    const filled: AttendeeDraft = {
+      first_names: d.first_names,
+      last_names: d.last_names,
+      doc_type: 'DNI',
+      doc_number: d.doc_number,
+      ocr_doc: d.doc_number,
+    }
+    // Reemplaza la primera fila vacía o agrega una nueva
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => !r.first_names.trim() && !r.doc_number.trim())
+      if (idx === -1) return [...prev, filled]
+      return prev.map((r, i) => (i === idx ? filled : r))
+    })
+  }
 
   return (
     <div className="space-y-4">
       {done && (
         <Alert tone="success" onClose={() => setDone(null)}>
-          Ingresaron {done.attendees.length} persona(s) a {done.destination_label}. Código {done.short_code}.
+          Ingresaron {done.attendees.length} persona(s) a {done.destination_label}.
         </Alert>
       )}
       <Card className="p-5 space-y-4">
-        <h2 className="text-base font-black text-pine-950">Registrar visita en mesa</h2>
-        <p className="text-xs font-semibold text-pine-800/70 -mt-2">Para quien no tiene celular. Mismo formulario que el cartel de garita.</p>
+        <div>
+          <h2 className="text-base font-black text-pine-950">Registrar visitante con DNI</h2>
+          <p className="text-xs font-semibold text-pine-800/70">
+            Para negocios y áreas comunes. Las casas solo reciben visitas con el QR del residente.
+          </p>
+        </div>
         {mut.isError && <Alert tone="error">{errorMessage(mut.error, 'No se pudo registrar')}</Alert>}
+
+        <Button size="lg" variant="gold" className="w-full" onClick={() => setCamera(true)}>
+          <ScanText className="w-6 h-6" /> Fotografiar reverso del DNI
+        </Button>
+        {lastRead && (
+          <Alert tone={lastRead.checksum_ok ? 'success' : 'warn'}>
+            {lastRead.checksum_ok
+              ? 'DNI leído. Revisa los datos antes de registrar.'
+              : 'Leímos el DNI pero el número podría tener un error. Compáralo con el documento.'}
+          </Alert>
+        )}
+
+        {rows.length > 0 ? (
+          <AttendeeEditor rows={rows} onChange={setRows} minRows={0} />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setRows([emptyAttendee()])}
+            className="w-full text-sm font-extrabold text-pine-700 hover:underline cursor-pointer"
+          >
+            ¿Sin DNI físico o la cámara no lee? Escribir los datos a mano
+          </button>
+        )}
+
         <div>
           <Label htmlFor="desk-dest">¿A dónde va?</Label>
           <select id="desk-dest" value={dest} onChange={(e) => setDest(e.target.value)} className={inputClass}>
-            <option value="">Elige un destino</option>
+            <option value="">Elige un servicio</option>
             {catalog.data?.catalog.map((c) => (
               <option key={c.lot_id} value={c.lot_id}>
                 {c.display_name}
               </option>
             ))}
-            <option value="__LOT__">Una casa (escribir lote)</option>
           </select>
-          {dest === '__LOT__' && (
-            <input
-              aria-label="Lote"
-              placeholder="Ej. P20"
-              value={customLot}
-              onChange={(e) => setCustomLot(e.target.value.toUpperCase())}
-              className={`${inputClass} mt-2 uppercase`}
-            />
-          )}
         </div>
-        <AttendeeEditor rows={rows} onChange={setRows} />
         <div>
           <Label htmlFor="desk-plate">Placa (opcional)</Label>
           <input id="desk-plate" placeholder="ABC-123" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} className={`${inputClass} font-mono uppercase`} />
@@ -539,12 +579,16 @@ function DeskTab() {
           size="lg"
           className="w-full"
           loading={mut.isPending}
-          disabled={!destination || toAttendeeInputs(rows).length === 0}
+          disabled={!dest || toAttendeeInputs(rows).length === 0}
           onClick={() => mut.mutate()}
         >
-          Registrar y dejar pasar
+          Registrar ingreso
         </Button>
+        <p className="text-[11px] font-semibold text-pine-800/60 text-center">
+          La foto del DNI se lee en este teléfono y se descarta. Solo se guardan nombres, apellidos y número.
+        </p>
       </Card>
+      {camera && <DniCapture onResult={onDni} onClose={() => setCamera(false)} />}
     </div>
   )
 }
