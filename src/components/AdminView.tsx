@@ -27,6 +27,7 @@ import {
   type PropertyLotResponse,
   VERIFICATION_LABEL,
 } from '../lib/api'
+import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
 interface AdminViewProps {
@@ -46,7 +47,7 @@ export function AdminView({ session, onLogout, onSwitchToResident }: AdminViewPr
         eyebrow={`${session.role === 'SUPER_ADMIN' ? 'Super admin' : 'Junta directiva'} • ${session.villa_id}`}
         title="Panel de administración"
         icon={<TreePine className="w-6 h-6" />}
-        onLogout={onLogout}
+        onLogout={onLogout} actions={<ChangePasswordButton />}
       >
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="flex-1">

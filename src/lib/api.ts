@@ -333,12 +333,17 @@ export const koloalaApi = {
   // ---- Auth ----
   lookupUser: (username: string, villaId: string) =>
     apiRequest<UserLookupResponse>('/api/v1/auth/lookup', { method: 'POST', body: json({ username }) }, villaId),
-  activateLotPin: (username: string, phone: string, villaId: string) =>
+  activateLotPin: (username: string, villaId: string, phone?: string) =>
     apiRequest<ActivateLotPinResponse>(
       '/api/v1/auth/activate-pin',
-      { method: 'POST', body: json({ username, phone }) },
+      { method: 'POST', body: json({ username, phone: phone || null }) },
       villaId,
     ),
+  changePassword: (current_password: string, new_password: string) =>
+    apiRequest<{ message: string }>('/api/v1/auth/change-password', {
+      method: 'POST',
+      body: json({ current_password, new_password }),
+    }),
   login: (username: string, password: string, villaId: string) =>
     apiRequest<AuthSession>('/api/v1/auth/login', { method: 'POST', body: json({ username, password }) }, villaId),
 

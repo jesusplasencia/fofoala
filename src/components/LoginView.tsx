@@ -1,6 +1,7 @@
-import { ArrowLeft, ArrowRight, Gift, KeyRound, Phone, QrCode, Smartphone, TreePine } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Gift, Phone, QrCode, Smartphone, TreePine } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { type AuthSession, detectVillaId, getVillaDisplayName, koloalaApi, saveSession } from '../lib/api'
+import { PasswordInput } from './PasswordInput'
 import { Alert, Button, Garland, inputClass, Label, Snowfall } from './ui'
 
 interface LoginViewProps {
@@ -54,7 +55,14 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
         setNotice(lookup.message)
         setStep('NO_ACCOUNT')
       } else if (lookup.status === 'NEEDS_PHONE_ACTIVATION') {
-        setStep('ACTIVATE')
+        if (/^\d{9}$/.test(lookup.username)) {
+          // El usuario YA es su celular: enviamos el PIN directo, sin volver a pedir el número.
+          const res = await koloalaApi.activateLotPin(lookup.username, villaId)
+          setNotice(res.message)
+          setStep('PASSWORD')
+        } else {
+          setStep('ACTIVATE')
+        }
       } else {
         setStep('PASSWORD')
       }
@@ -65,7 +73,7 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
     e.preventDefault()
     if (!phoneInput.trim()) return
     run(async () => {
-      const res = await koloalaApi.activateLotPin(username, phoneInput.trim(), villaId)
+      const res = await koloalaApi.activateLotPin(username, villaId, phoneInput.trim())
       setNotice(res.message)
       setStep('PASSWORD')
     }, 'No se pudo enviar el PIN por WhatsApp')
@@ -203,21 +211,19 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
                 {Who}
                 {notice && <Alert tone="success">{notice}</Alert>}
                 <div>
-                  <Label htmlFor="login-pin">PIN de 8 dígitos</Label>
-                  <div className="relative">
-                    <KeyRound className="w-5 h-5 text-pine-500 absolute left-4 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="login-pin"
-                      type="password"
-                      required
-                      autoFocus
-                      autoComplete="current-password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={`${inputClass} pl-12 text-lg tracking-widest`}
-                    />
-                  </div>
+                  <Label htmlFor="login-pin">PIN de WhatsApp o tu contraseña</Label>
+                  <PasswordInput
+                    id="login-pin"
+                    label="PIN o contraseña"
+                    value={password}
+                    onChange={setPassword}
+                    autoPaste={!!notice}
+                  />
+                  {notice && (
+                    <p className="text-[11px] font-semibold text-pine-800/60 mt-1.5">
+                      Copia el PIN del mensaje de WhatsApp y toca la caja: se pega solo.
+                    </p>
+                  )}
                 </div>
                 <Button type="submit" size="lg" className="w-full" loading={loading}>
                   Ingresar a {villaName}

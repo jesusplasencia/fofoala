@@ -30,6 +30,7 @@ import {
 } from '../lib/api'
 import { parseScan } from '../lib/passCard'
 import { type AttendeeDraft, AttendeeEditor, emptyAttendee, toAttendeeInputs } from './AttendeeEditor'
+import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
 interface GuardViewProps {
@@ -43,7 +44,7 @@ export function GuardView({ session, onLogout }: GuardViewProps) {
   const [tab, setTab] = useState<Tab>('scan')
   return (
     <div className="min-h-screen xmas-page pb-12">
-      <AppHeader eyebrow={`Garita oficial • ${session.villa_id}`} title={`Vigilante ${session.username}`} icon={<Shield className="w-6 h-6" />} onLogout={onLogout}>
+      <AppHeader eyebrow={`Garita oficial • ${session.villa_id}`} title={`Vigilante ${session.username}`} icon={<Shield className="w-6 h-6" />} onLogout={onLogout} actions={<ChangePasswordButton />}>
         <Tabs
           dark
           active={tab}

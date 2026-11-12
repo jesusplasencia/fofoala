@@ -28,6 +28,7 @@ import {
 } from '../lib/api'
 import { buildShareUrl, generatePassCardBlob, qrDataUrl } from '../lib/passCard'
 import { type AttendeeDraft, AttendeeEditor, toAttendeeInputs } from './AttendeeEditor'
+import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Snowfall, Tabs } from './ui'
 
 interface ResidentViewProps {
@@ -58,7 +59,7 @@ export function ResidentView({ session, onLogout, onSwitchToAdmin }: ResidentVie
         title={activeLot ? `Casa ${activeLot}` : session.full_name || session.username}
         icon={<Home className="w-6 h-6" />}
         onTitleClick={() => setTab('passes')}
-        onLogout={onLogout}
+        onLogout={onLogout} actions={<ChangePasswordButton />}
       >
         <div className="space-y-3">
           {lots.length > 1 && (

@@ -58,9 +58,10 @@ interface AppHeaderProps {
   onTitleClick?: () => void
   children?: ReactNode
   wide?: boolean
+  actions?: ReactNode
 }
 
-export function AppHeader({ eyebrow, title, icon, onLogout, onTitleClick, children, wide }: AppHeaderProps) {
+export function AppHeader({ eyebrow, title, icon, onLogout, onTitleClick, children, wide, actions }: AppHeaderProps) {
   const TitleTag = onTitleClick ? 'button' : 'div'
   return (
     <header className="xmas-header text-white relative z-10 shadow-lg shadow-pine-950/30">
@@ -81,6 +82,8 @@ export function AppHeader({ eyebrow, title, icon, onLogout, onTitleClick, childr
               <h1 className="text-xl sm:text-2xl font-black tracking-tight truncate">{title}</h1>
             </div>
           </TitleTag>
+          <div className="flex items-center gap-2 shrink-0">
+          {actions}
           {onLogout && (
             <button
               type="button"
@@ -91,6 +94,7 @@ export function AppHeader({ eyebrow, title, icon, onLogout, onTitleClick, childr
               Salir
             </button>
           )}
+          </div>
         </div>
         {children && <div className="mt-4">{children}</div>}
       </div>
