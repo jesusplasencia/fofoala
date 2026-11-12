@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { KeyRound, X } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { koloalaApi } from '../lib/api'
 import { PasswordInput } from './PasswordInput'
 import { Alert, Button, errorMessage, Label } from './ui'
@@ -19,7 +20,7 @@ export function ChangePasswordButton() {
       >
         <KeyRound className="w-4 h-4 text-gold-300" />
       </button>
-      {open && <ChangePasswordModal onClose={() => setOpen(false)} />}
+      {open && createPortal(<ChangePasswordModal onClose={() => setOpen(false)} />, document.body)}
     </>
   )
 }
@@ -46,8 +47,8 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-pine-950/60 flex items-end sm:items-center justify-center p-4 text-pine-950" role="dialog" aria-modal="true" aria-labelledby="cp-title">
-      <form onSubmit={submit} className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 space-y-4">
+    <div className="fixed inset-0 z-[100] bg-pine-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 text-pine-950" role="dialog" aria-modal="true" aria-labelledby="cp-title">
+      <form onSubmit={submit} className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl shadow-2xl p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 id="cp-title" className="text-lg font-black">Cambiar contraseña</h2>
           <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-pine-50 cursor-pointer" aria-label="Cerrar">
