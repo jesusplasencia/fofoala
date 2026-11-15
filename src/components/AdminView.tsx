@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Building2,
+  Download,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +22,8 @@ import {
 import { type ChangeEvent, type FormEvent, Fragment, useRef, useState } from 'react'
 import {
   type AccessSearchResponse,
+  type BulkLotsSyncResponse,
+  type BulkRejectedRow,
   type AuthSession,
   formatDateTime,
   koloalaApi,
@@ -87,34 +90,106 @@ export function AdminView({ session, onLogout, onSwitchToResident }: AdminViewPr
 // ---------------------------------------------------------------------------
 // Padrón de lotes
 // ---------------------------------------------------------------------------
-type LotRow = { lot_id: string; owner_name: string; owner_phone?: string; owner_document_id?: string; is_maintenance_up_to_date: boolean }
+type LotRow = {
+  row_number?: number
+  lot_id: string
+  owner_name?: string
+  owner_phone?: string
+  owner_document_id?: string
+  is_maintenance_up_to_date: boolean
+}
 
+/** Envía TODAS las filas (también las incompletas) para que el servidor diga cuáles fallaron y por qué. */
 function parseLotsCsv(text: string): LotRow[] {
   const out: LotRow[] = []
-  text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .forEach((line, i) => {
-      const cols = line.split(/[;,]/).map((c) => c.trim().replace(/^"|"$/g, ''))
-      if (cols.length < 2 || (i === 0 && /lote|lot_id/i.test(cols[0]))) return
-      const status = (cols[3] || 'true').toLowerCase()
-      out.push({
-        lot_id: cols[0].toUpperCase(),
-        owner_name: cols[1] || 'Propietario',
-        owner_phone: cols[2] || undefined,
-        owner_document_id: cols[4]?.toUpperCase().replace(/[^0-9A-Z]/g, '') || undefined,
-        is_maintenance_up_to_date: !['false', '0', 'no', 'mora', 'deuda'].includes(status),
-      })
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim()
+    if (!line) return
+    const cols = line.split(/[;,]/).map((c) => c.trim().replace(/^"|"$/g, ''))
+    if (i === 0 && /lote|lot_id/i.test(cols[0] || '')) return
+    const status = (cols[3] || 'true').toLowerCase()
+    out.push({
+      row_number: i + 1,
+      lot_id: (cols[0] || '').toUpperCase(),
+      owner_name: cols[1] || '',
+      owner_phone: cols[2] || '',
+      owner_document_id: (cols[4] || '').toUpperCase(),
+      is_maintenance_up_to_date: !['false', '0', 'no', 'mora', 'deuda'].includes(status),
     })
-  return out.filter((l) => l.lot_id.length >= 2)
+  })
+  return out
+}
+
+function downloadRejected(rows: BulkRejectedRow[]) {
+  const lines = ['fila,lote,celular,motivo', ...rows.map((r) => [r.row_number ?? '', r.lot_id ?? '', r.phone ?? '', `"${r.reason.replace(/"/g, "'")}"`].join(','))]
+  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'padron-errores.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function BulkResult({ result, onClose }: { result: BulkLotsSyncResponse; onClose: () => void }) {
+  return (
+    <Card className={`p-5 space-y-3 border-2 ${result.rejected_count ? 'border-gold-400' : 'border-pine-300'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="font-black text-pine-800">
+            ✅ {result.processed_count} lote(s) procesado(s) ({result.created_count} nuevos, {result.updated_count} actualizados)
+          </p>
+          {result.rejected_count > 0 && (
+            <p className="font-black text-berry-700">⚠️ {result.rejected_count} fila(s) con errores: no se cargaron</p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {result.rejected_count > 0 && (
+            <Button size="sm" variant="dark" onClick={() => downloadRejected(result.rejected)}>
+              <Download className="w-4 h-4 text-gold-300" /> Descargar errores (CSV)
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+      </div>
+      {result.rejected_count > 0 && (
+        <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-2xl border border-berry-200">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-berry-50 text-[11px] font-extrabold uppercase tracking-wider text-berry-800 sticky top-0">
+              <tr>
+                <th className="py-2 px-3">Fila</th>
+                <th className="py-2 px-3">Lote</th>
+                <th className="py-2 px-3">Celular</th>
+                <th className="py-2 px-3">Motivo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-berry-100">
+              {result.rejected.map((r, i) => (
+                <tr key={i}>
+                  <td className="py-2 px-3 font-mono font-bold">{r.row_number ?? '—'}</td>
+                  <td className="py-2 px-3 font-mono">{r.lot_id ?? '—'}</td>
+                  <td className="py-2 px-3 font-mono text-pine-800/70">{r.phone ?? '—'}</td>
+                  <td className="py-2 px-3 font-semibold text-berry-800">{r.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {result.rejected_count > 0 && (
+        <p className="text-[11px] font-semibold text-pine-800/60">Corrige esas filas en tu Excel y vuelve a subir solo ellas: las ya cargadas no se duplican.</p>
+      )}
+    </Card>
+  )
 }
 
 function LotsTab({ villaId }: { villaId: string }) {
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const [filter, setFilter] = useState<boolean | null>(null)
-  const [summary, setSummary] = useState<string | null>(null)
+  const [result, setResult] = useState<BulkLotsSyncResponse | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [openMembers, setOpenMembers] = useState<string | null>(null)
@@ -143,7 +218,7 @@ function LotsTab({ villaId }: { villaId: string }) {
     mutationFn: (rows: LotRow[]) => koloalaApi.bulkImportLots(rows),
     onSuccess: (r) => {
       refresh()
-      setSummary(`Padrón actualizado: ${r.processed_count} lotes (${r.created_count} nuevos, ${r.updated_count} actualizados).`)
+      setResult(r)
     },
   })
 
@@ -155,26 +230,38 @@ function LotsTab({ villaId }: { villaId: string }) {
     if (rows.length) bulk.mutate(rows)
   }
 
+  const newLotValid =
+    newLot.lot_id.trim().length >= 2 &&
+    newLot.owner_name.trim().length >= 2 &&
+    newLot.owner_phone.replace(/\D/g, '').length === 9 &&
+    newLot.doc.trim().length >= 8
+
   const addLot = (e: FormEvent) => {
     e.preventDefault()
-    if (!newLot.lot_id.trim() || !newLot.owner_name.trim()) return
-    bulk.mutate([
+    if (!newLotValid) return
+    bulk.mutate(
+      [
+        {
+          lot_id: newLot.lot_id.trim().toUpperCase(),
+          owner_name: newLot.owner_name.trim(),
+          owner_phone: newLot.owner_phone.trim(),
+          owner_document_id: newLot.doc.trim(),
+          is_maintenance_up_to_date: newLot.ok,
+        },
+      ],
       {
-        lot_id: newLot.lot_id.trim().toUpperCase(),
-        owner_name: newLot.owner_name.trim(),
-        owner_phone: newLot.owner_phone.trim() || undefined,
-        owner_document_id: newLot.doc.trim() || undefined,
-        is_maintenance_up_to_date: newLot.ok,
+        onSuccess: (r) => {
+          if (!r.rejected_count) setNewLot({ lot_id: '', owner_name: '', owner_phone: '', doc: '', ok: true })
+        },
       },
-    ])
-    setNewLot({ lot_id: '', owner_name: '', owner_phone: '', doc: '', ok: true })
+    )
   }
 
   const residential = (lots.data?.items ?? []).filter((l) => !l.lot_type || l.lot_type === 'LOT')
 
   return (
     <>
-      {summary && <Alert tone="success" onClose={() => setSummary(null)}>{summary}</Alert>}
+      {result && <BulkResult result={result} onClose={() => setResult(null)} />}
       {(bulk.isError || toggle.isError || save.isError) && (
         <Alert tone="error">{errorMessage(bulk.error || toggle.error || save.error, 'Ocurrió un error')}</Alert>
       )}
@@ -184,7 +271,7 @@ function LotsTab({ villaId }: { villaId: string }) {
           <div>
             <h2 className="text-base font-black text-pine-950">Alta de lotes y carga masiva</h2>
             <p className="text-xs font-semibold text-pine-800/60">
-              CSV: <code className="font-mono">lote,propietario,telefono,aldia,dni</code> — el DNI se le pide al titular en su primer ingreso.
+              CSV: <code className="font-mono">lote,propietario,telefono,aldia,dni</code> — todos obligatorios salvo <code className="font-mono">aldia</code>. Las filas con errores se saltan y se muestran aquí.
             </p>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.txt" onChange={onCsv} className="hidden" />
@@ -221,7 +308,7 @@ function LotsTab({ villaId }: { villaId: string }) {
               <input type="checkbox" checked={newLot.ok} onChange={(e) => setNewLot({ ...newLot, ok: e.target.checked })} className="w-4 h-4 accent-pine-600" />
               Al día
             </label>
-            <Button type="submit" size="sm" className="flex-1">
+            <Button type="submit" size="sm" className="flex-1" disabled={!newLotValid} loading={bulk.isPending}>
               <Plus className="w-4 h-4" /> Agregar
             </Button>
           </div>

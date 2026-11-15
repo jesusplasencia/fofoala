@@ -185,7 +185,7 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (add.phone.length === 9 && add.first.trim() && add.last.trim()) create.mutate()
+          if (add.phone.length === 9 && add.first.trim() && add.last.trim() && add.doc.length >= 8) create.mutate()
         }}
         className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-center pt-2 border-t border-pine-100"
       >
@@ -200,7 +200,7 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
           className={`${inputClass} !py-2 font-mono`}
         />
         <input aria-label="DNI / CE" placeholder="DNI / CE" value={add.doc} onChange={(e) => setAdd({ ...add, doc: cleanDoc(e.target.value) })} className={`${inputClass} !py-2 font-mono`} />
-        <Button type="submit" size="sm" loading={create.isPending} disabled={add.phone.length !== 9 || !add.first.trim() || !add.last.trim()}>
+        <Button type="submit" size="sm" loading={create.isPending} disabled={add.phone.length !== 9 || !add.first.trim() || !add.last.trim() || add.doc.length < 8}>
           <UserPlus className="w-4 h-4" /> Agregar
         </Button>
       </form>

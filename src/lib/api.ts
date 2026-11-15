@@ -193,11 +193,20 @@ export interface LotMembership {
   is_maintenance_up_to_date: boolean | null
 }
 
+export interface BulkRejectedRow {
+  row_number: number | null
+  lot_id: string | null
+  phone: string | null
+  reason: string
+}
+
 export interface BulkLotsSyncResponse {
   villa_id: string
   processed_count: number
   created_count: number
   updated_count: number
+  rejected_count: number
+  rejected: BulkRejectedRow[]
 }
 
 export interface CatalogBulkResponse {
@@ -445,8 +454,9 @@ export const koloalaApi = {
     }),
   bulkImportLots: (
     lots: Array<{
+      row_number?: number
       lot_id: string
-      owner_name: string
+      owner_name?: string
       owner_phone?: string
       owner_document_id?: string
       is_maintenance_up_to_date: boolean
