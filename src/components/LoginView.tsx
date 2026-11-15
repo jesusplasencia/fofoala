@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Gift, Phone, Smartphone, Store, TreePine } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Gift, IdCard, Smartphone, Store, TreePine } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { type AuthSession, detectVillaId, getVillaDisplayName, koloalaApi, saveSession } from '../lib/api'
 import { PasswordInput } from './PasswordInput'
@@ -8,7 +8,7 @@ interface LoginViewProps {
   onLoginSuccess: (session: AuthSession) => void
 }
 
-type Step = 'IDENTIFY' | 'ACTIVATE' | 'PASSWORD' | 'NO_ACCOUNT'
+type Step = 'IDENTIFY' | 'DOCUMENT' | 'PASSWORD' | 'NO_ACCOUNT'
 
 export function LoginView({ onLoginSuccess }: LoginViewProps) {
   const villaId = detectVillaId()
@@ -16,8 +16,7 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
 
   const [step, setStep] = useState<Step>('IDENTIFY')
   const [username, setUsername] = useState('')
-  const [ownerName, setOwnerName] = useState<string | null>(null)
-  const [phoneInput, setPhoneInput] = useState('')
+  const [docInput, setDocInput] = useState('')
   const [password, setPassword] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -26,7 +25,7 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
   const reset = () => {
     setStep('IDENTIFY')
     setPassword('')
-    setPhoneInput('')
+    setDocInput('')
     setNotice(null)
     setError(null)
   }
@@ -50,19 +49,13 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
     run(async () => {
       const lookup = await koloalaApi.lookupUser(value, villaId)
       setUsername(lookup.username)
-      setOwnerName(lookup.owner_name)
       if (lookup.status === 'UNREGISTERED_NO_ACCOUNT') {
         setNotice(lookup.message)
         setStep('NO_ACCOUNT')
-      } else if (lookup.status === 'NEEDS_PHONE_ACTIVATION') {
-        if (/^\d{9}$/.test(lookup.username)) {
-          // El usuario YA es su celular: enviamos el PIN directo, sin volver a pedir el número.
-          const res = await koloalaApi.activateLotPin(lookup.username, villaId)
-          setNotice(res.message)
-          setStep('PASSWORD')
-        } else {
-          setStep('ACTIVATE')
-        }
+      } else if (lookup.status === 'NEEDS_DOCUMENT') {
+        // Primer ingreso: se confirma el DNI antes de enviar el PIN (evita spam de WhatsApps).
+        setNotice(null)
+        setStep('DOCUMENT')
       } else {
         setStep('PASSWORD')
       }
@@ -71,9 +64,9 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
 
   const handleActivate = (e: FormEvent) => {
     e.preventDefault()
-    if (!phoneInput.trim()) return
+    if (docInput.trim().length < 8) return
     run(async () => {
-      const res = await koloalaApi.activateLotPin(username, villaId, phoneInput.trim())
+      const res = await koloalaApi.activateLotPin(username, docInput.trim(), villaId)
       setNotice(res.message)
       setStep('PASSWORD')
     }, 'No se pudo enviar el PIN por WhatsApp')
@@ -94,7 +87,7 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
       <div className="min-w-0">
         <span className="text-[11px] font-extrabold uppercase tracking-wider text-pine-700 block">Ingresando como</span>
         <strong className="text-base font-black text-pine-950 truncate block">
-          {username} {ownerName ? `• ${ownerName}` : ''}
+          {username}
         </strong>
       </div>
       <button type="button" onClick={reset} className="text-xs font-extrabold text-berry-700 hover:underline flex items-center gap-1 cursor-pointer">
@@ -184,27 +177,29 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
               </div>
             )}
 
-            {step === 'ACTIVATE' && (
+            {step === 'DOCUMENT' && (
               <form onSubmit={handleActivate} className="space-y-5">
                 {Who}
+                <Alert tone="info">Es tu primer ingreso. Para proteger tu cuenta, confirma tu documento y te enviaremos tu PIN por WhatsApp.</Alert>
                 <div>
-                  <Label htmlFor="login-phone">Confirma tu WhatsApp para recibir tu PIN</Label>
+                  <Label htmlFor="login-doc">Tu DNI o Carnet de Extranjería</Label>
                   <div className="relative">
-                    <Phone className="w-5 h-5 text-pine-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                    <IdCard className="w-5 h-5 text-pine-500 absolute left-4 top-1/2 -translate-y-1/2" />
                     <input
-                      id="login-phone"
-                      type="tel"
+                      id="login-doc"
                       required
                       autoFocus
-                      inputMode="numeric"
-                      placeholder="Ej. 987654321"
-                      value={phoneInput}
-                      onChange={(e) => setPhoneInput(e.target.value)}
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      maxLength={12}
+                      placeholder="Ej. 45891230"
+                      value={docInput}
+                      onChange={(e) => setDocInput(e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, ''))}
                       className={`${inputClass} pl-12 text-lg font-mono tracking-wider`}
                     />
                   </div>
                 </div>
-                <Button type="submit" variant="berry" size="lg" className="w-full" loading={loading}>
+                <Button type="submit" variant="berry" size="lg" className="w-full" loading={loading} disabled={docInput.length < 8}>
                   Enviar mi PIN por WhatsApp
                 </Button>
               </form>

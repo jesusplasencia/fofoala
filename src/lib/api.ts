@@ -29,9 +29,7 @@ export interface AuthSession {
 export interface UserLookupResponse {
   villa_id: string
   username: string
-  status: 'READY_FOR_PASSWORD' | 'NEEDS_PHONE_ACTIVATION' | 'UNREGISTERED_NO_ACCOUNT'
-  owner_name: string | null
-  role: UserRole | null
+  status: 'READY_FOR_PASSWORD' | 'NEEDS_DOCUMENT' | 'UNREGISTERED_NO_ACCOUNT'
   message: string | null
 }
 
@@ -336,10 +334,10 @@ export const koloalaApi = {
   // ---- Auth ----
   lookupUser: (username: string, villaId: string) =>
     apiRequest<UserLookupResponse>('/api/v1/auth/lookup', { method: 'POST', body: json({ username }) }, villaId),
-  activateLotPin: (username: string, villaId: string, phone?: string) =>
+  activateLotPin: (username: string, document_id: string, villaId: string) =>
     apiRequest<ActivateLotPinResponse>(
       '/api/v1/auth/activate-pin',
-      { method: 'POST', body: json({ username, phone: phone || null }) },
+      { method: 'POST', body: json({ username, document_id }) },
       villaId,
     ),
   changePassword: (current_password: string, new_password: string) =>
@@ -364,11 +362,16 @@ export const koloalaApi = {
   myMemberships: () => apiRequest<LotMembership[]>('/api/v1/lots/my-memberships'),
   listLotMembers: (lotId: string) =>
     apiRequest<LotMembership[]>(`/api/v1/lots/${encodeURIComponent(lotId)}/members`),
-  addLotMember: (lotId: string, payload: { phone: string; full_name: string; document_id?: string | null }) =>
+  addLotMember: (lotId: string, payload: { phone: string; full_name: string; document_id: string }) =>
     apiRequest<LotMembership>(`/api/v1/lots/${encodeURIComponent(lotId)}/members`, {
       method: 'POST',
       body: json(payload),
     }),
+  updateLotMember: (lotId: string, phone: string, payload: { full_name?: string; document_id?: string }) =>
+    apiRequest<LotMembership>(
+      `/api/v1/lots/${encodeURIComponent(lotId)}/members/${encodeURIComponent(phone)}`,
+      { method: 'PATCH', body: json(payload) },
+    ),
   removeLotMember: (lotId: string, phone: string) =>
     apiRequest<LotMembership>(
       `/api/v1/lots/${encodeURIComponent(lotId)}/members/${encodeURIComponent(phone)}`,
@@ -423,7 +426,14 @@ export const koloalaApi = {
   resetLotPassword: (lotId: string) =>
     apiRequest<ResidentCredentialItem>(`/api/v1/lots/${encodeURIComponent(lotId)}/reset-password`, { method: 'POST' }),
   bulkImportLots: (
-    lots: Array<{ lot_id: string; owner_name: string; owner_phone?: string; owner_email?: string; is_maintenance_up_to_date: boolean }>,
+    lots: Array<{
+      lot_id: string
+      owner_name: string
+      owner_phone?: string
+      owner_email?: string
+      owner_document_id?: string
+      is_maintenance_up_to_date: boolean
+    }>,
   ) => apiRequest<BulkLotsSyncResponse>('/api/v1/lots/bulk', { method: 'PUT', body: json({ lots }) }),
   bulkCatalog: (items: Array<{ lot_id: string; display_name: string; lot_type: LotType; is_public: boolean }>) =>
     apiRequest<CatalogBulkResponse>('/api/v1/admin/catalog/bulk', { method: 'POST', body: json({ items }) }),

@@ -83,7 +83,7 @@ export function AdminView({ session, onLogout, onSwitchToResident }: AdminViewPr
 // ---------------------------------------------------------------------------
 // Padrón de lotes
 // ---------------------------------------------------------------------------
-type LotRow = { lot_id: string; owner_name: string; owner_phone?: string; is_maintenance_up_to_date: boolean }
+type LotRow = { lot_id: string; owner_name: string; owner_phone?: string; owner_document_id?: string; is_maintenance_up_to_date: boolean }
 
 function parseLotsCsv(text: string): LotRow[] {
   const out: LotRow[] = []
@@ -99,6 +99,7 @@ function parseLotsCsv(text: string): LotRow[] {
         lot_id: cols[0].toUpperCase(),
         owner_name: cols[1] || 'Propietario',
         owner_phone: cols[2] || undefined,
+        owner_document_id: cols[4]?.toUpperCase().replace(/[^0-9A-Z]/g, '') || undefined,
         is_maintenance_up_to_date: !['false', '0', 'no', 'mora', 'deuda'].includes(status),
       })
     })
@@ -113,7 +114,8 @@ function LotsTab({ villaId }: { villaId: string }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
-  const [newLot, setNewLot] = useState({ lot_id: '', owner_name: '', owner_phone: '', ok: true })
+  const [editDoc, setEditDoc] = useState('')
+  const [newLot, setNewLot] = useState({ lot_id: '', owner_name: '', owner_phone: '', doc: '', ok: true })
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const lots = useQuery({ queryKey: ['lots', villaId, page, filter], queryFn: () => koloalaApi.listLots(page, 50, filter) })
@@ -124,21 +126,29 @@ function LotsTab({ villaId }: { villaId: string }) {
     onSuccess: refresh,
   })
   const save = useMutation({
-    mutationFn: (l: PropertyLotResponse) =>
-      koloalaApi.updateLotDetails(l.lot_id, {
+    mutationFn: async (l: PropertyLotResponse) => {
+      const updated = await koloalaApi.updateLotDetails(l.lot_id, {
         is_maintenance_up_to_date: l.is_maintenance_up_to_date,
         owner_name: editName.trim(),
         owner_phone: editPhone.trim() || '',
-      }),
+      })
+      const phone = (updated.owner_phone || '').replace(/\D/g, '').slice(-9)
+      if (editDoc.trim() && phone.length === 9) {
+        await koloalaApi.updateLotMember(l.lot_id, phone, { document_id: editDoc.trim() })
+      }
+      return updated
+    },
     onSuccess: () => {
       refresh()
       setEditing(null)
+      if (editDoc.trim()) setSummary('Datos del titular actualizados, incluido su DNI.')
+      setEditDoc('')
     },
   })
   const resetPin = useMutation({
     mutationFn: (lotId: string) => koloalaApi.resetLotPassword(lotId),
     onSuccess: (c) =>
-      setSummary(`Acceso restablecido para ${c.lot_id} (${c.owner_name}). Al ingresar confirmará su WhatsApp y recibirá un PIN nuevo.`),
+      setSummary(`Acceso restablecido para ${c.lot_id} (${c.owner_name}). Al ingresar confirmará su DNI y recibirá un PIN nuevo por WhatsApp.`),
   })
   const bulk = useMutation({
     mutationFn: (rows: LotRow[]) => koloalaApi.bulkImportLots(rows),
@@ -164,10 +174,11 @@ function LotsTab({ villaId }: { villaId: string }) {
         lot_id: newLot.lot_id.trim().toUpperCase(),
         owner_name: newLot.owner_name.trim(),
         owner_phone: newLot.owner_phone.trim() || undefined,
+        owner_document_id: newLot.doc.trim() || undefined,
         is_maintenance_up_to_date: newLot.ok,
       },
     ])
-    setNewLot({ lot_id: '', owner_name: '', owner_phone: '', ok: true })
+    setNewLot({ lot_id: '', owner_name: '', owner_phone: '', doc: '', ok: true })
   }
 
   const residential = (lots.data?.items ?? []).filter((l) => !l.lot_type || l.lot_type === 'LOT')
@@ -184,7 +195,7 @@ function LotsTab({ villaId }: { villaId: string }) {
           <div>
             <h2 className="text-base font-black text-pine-950">Alta de lotes y carga masiva</h2>
             <p className="text-xs font-semibold text-pine-800/60">
-              CSV: <code className="font-mono">lote,propietario,telefono,aldia</code>
+              CSV: <code className="font-mono">lote,propietario,telefono,aldia,dni</code> — el DNI se le pide al titular en su primer ingreso.
             </p>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.txt" onChange={onCsv} className="hidden" />
@@ -192,7 +203,7 @@ function LotsTab({ villaId }: { villaId: string }) {
             <Upload className="w-4 h-4 text-gold-300" /> Importar CSV
           </Button>
         </div>
-        <form onSubmit={addLot} className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
+        <form onSubmit={addLot} className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
           <div>
             <Label htmlFor="nl-id">Lote</Label>
             <input id="nl-id" placeholder="P21" value={newLot.lot_id} onChange={(e) => setNewLot({ ...newLot, lot_id: e.target.value.toUpperCase() })} className={`${inputClass} uppercase`} />
@@ -204,6 +215,17 @@ function LotsTab({ villaId }: { villaId: string }) {
           <div>
             <Label htmlFor="nl-phone">WhatsApp</Label>
             <input id="nl-phone" placeholder="987654321" value={newLot.owner_phone} onChange={(e) => setNewLot({ ...newLot, owner_phone: e.target.value })} className={`${inputClass} font-mono`} />
+          </div>
+          <div>
+            <Label htmlFor="nl-doc">DNI / CE</Label>
+            <input
+              id="nl-doc"
+              placeholder="45891230"
+              maxLength={12}
+              value={newLot.doc}
+              onChange={(e) => setNewLot({ ...newLot, doc: e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '') })}
+              className={`${inputClass} font-mono`}
+            />
           </div>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs font-extrabold text-pine-800 cursor-pointer">
@@ -267,7 +289,21 @@ function LotsTab({ villaId }: { villaId: string }) {
                       {isEd ? <input autoFocus aria-label="Propietario" value={editName} onChange={(e) => setEditName(e.target.value)} className={`${inputClass} !py-1.5`} /> : lot.owner_name}
                     </td>
                     <td className="py-3 px-5 font-mono text-xs text-pine-800/70">
-                      {isEd ? <input aria-label="Teléfono" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${inputClass} !py-1.5 !w-36`} /> : lot.owner_phone || '—'}
+                      {isEd ? (
+                        <div className="flex flex-col gap-1.5">
+                          <input aria-label="Teléfono" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${inputClass} !py-1.5 !w-36`} />
+                          <input
+                            aria-label="Nuevo DNI del titular"
+                            placeholder="Nuevo DNI (opcional)"
+                            maxLength={12}
+                            value={editDoc}
+                            onChange={(e) => setEditDoc(e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, ''))}
+                            className={`${inputClass} !py-1.5 !w-36`}
+                          />
+                        </div>
+                      ) : (
+                        lot.owner_phone || '—'
+                      )}
                     </td>
                     <td className="py-3 px-5">
                       <button type="button" onClick={() => toggle.mutate(lot)} className="cursor-pointer" title="Cambiar estado">

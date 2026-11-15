@@ -410,17 +410,26 @@ function CarnetTab() {
 function FamilyTab({ lotId, isAnchor }: { lotId: string | null; isAnchor: boolean }) {
   const qc = useQueryClient()
   const [phone, setPhone] = useState('')
-  const [name, setName] = useState('')
+  const [firstNames, setFirstNames] = useState('')
+  const [lastNames, setLastNames] = useState('')
+  const [doc, setDoc] = useState('')
   const members = useQuery({
     queryKey: ['members', lotId],
     queryFn: () => koloalaApi.listLotMembers(lotId as string),
     enabled: !!lotId,
   })
   const add = useMutation({
-    mutationFn: () => koloalaApi.addLotMember(lotId as string, { phone: phone.trim(), full_name: name.trim() }),
+    mutationFn: () =>
+      koloalaApi.addLotMember(lotId as string, {
+        phone: phone.trim(),
+        full_name: `${firstNames.trim()} ${lastNames.trim()}`.trim(),
+        document_id: doc.trim(),
+      }),
     onSuccess: () => {
       setPhone('')
-      setName('')
+      setFirstNames('')
+      setLastNames('')
+      setDoc('')
       qc.invalidateQueries({ queryKey: ['members', lotId] })
     },
   })
@@ -431,9 +440,10 @@ function FamilyTab({ lotId, isAnchor }: { lotId: string | null; isAnchor: boolea
 
   if (!lotId) return <Alert tone="warn">No tienes un lote activo.</Alert>
 
+  const canAdd = phone.length === 9 && firstNames.trim().length >= 2 && lastNames.trim().length >= 2 && doc.length >= 8
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (phone.trim().length >= 9 && name.trim().length >= 2) add.mutate()
+    if (canAdd) add.mutate()
   }
 
   return (
@@ -445,7 +455,19 @@ function FamilyTab({ lotId, isAnchor }: { lotId: string | null; isAnchor: boolea
               <UserPlus className="w-5 h-5 text-berry-600" /> Agregar familiar o inquilino
             </h2>
             {add.isError && <Alert tone="error">{errorMessage(add.error, 'No se pudo agregar')}</Alert>}
-            <input aria-label="Nombre completo" placeholder="Nombre completo" value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input aria-label="Nombres" placeholder="Nombres" value={firstNames} onChange={(e) => setFirstNames(e.target.value)} className={inputClass} />
+              <input aria-label="Apellidos" placeholder="Apellidos" value={lastNames} onChange={(e) => setLastNames(e.target.value)} className={inputClass} />
+            </div>
+            <input
+              aria-label="DNI o Carnet de Extranjería"
+              placeholder="DNI o Carnet de Extranjería"
+              autoCapitalize="characters"
+              maxLength={12}
+              value={doc}
+              onChange={(e) => setDoc(e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, ''))}
+              className={`${inputClass} font-mono`}
+            />
             <input
               aria-label="Celular"
               type="tel"
@@ -455,10 +477,12 @@ function FamilyTab({ lotId, isAnchor }: { lotId: string | null; isAnchor: boolea
               onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 9))}
               className={`${inputClass} font-mono`}
             />
-            <Button type="submit" className="w-full" loading={add.isPending}>
+            <Button type="submit" className="w-full" loading={add.isPending} disabled={!canAdd}>
               Agregar a Casa {lotId}
             </Button>
-            <p className="text-[11px] font-semibold text-pine-800/60">Recibirá su PIN por WhatsApp la primera vez que ingrese.</p>
+            <p className="text-[11px] font-semibold text-pine-800/60">
+              La primera vez que ingrese, confirmará este DNI y recibirá su PIN por WhatsApp.
+            </p>
           </form>
         </Card>
       )}
