@@ -6,11 +6,12 @@ import { Alert, Button, Garland, inputClass, Label, Snowfall } from './ui'
 
 interface LoginViewProps {
   onLoginSuccess: (session: AuthSession) => void
+  notice?: string | null
 }
 
 type Step = 'IDENTIFY' | 'DOCUMENT' | 'PASSWORD' | 'NO_ACCOUNT'
 
-export function LoginView({ onLoginSuccess }: LoginViewProps) {
+export function LoginView({ onLoginSuccess, notice: sessionNotice }: LoginViewProps) {
   const villaId = detectVillaId()
   const villaName = getVillaDisplayName(villaId)
 
@@ -117,6 +118,7 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
           <Garland />
 
           <div className="p-6 sm:p-7 space-y-5">
+            {sessionNotice && step === 'IDENTIFY' && <Alert tone="warn">{sessionNotice}</Alert>}
             {error && <Alert tone="error">{error}</Alert>}
 
             {step === 'IDENTIFY' && (

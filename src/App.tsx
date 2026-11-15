@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AdminView } from './components/AdminView'
 import { GuardView } from './components/GuardView'
 import { LoginView } from './components/LoginView'
 import { InviteLinkView, PublicKioskView } from './components/PublicViews'
 import { ResidentView } from './components/ResidentView'
-import { type AuthSession, clearSession, getStoredSession, isAdminRole } from './lib/api'
+import { type AuthSession, clearSession, getStoredSession, isAdminRole, SESSION_EXPIRED_EVENT } from './lib/api'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,7 +41,18 @@ function AuthedApp({ session, onLogout }: { session: AuthSession; onLogout: () =
 
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => getStoredSession())
+  const [expiredNotice, setExpiredNotice] = useState(false)
   const route = publicRoute()
+
+  useEffect(() => {
+    const onExpired = () => {
+      queryClient.clear()
+      setSession(null)
+      setExpiredNotice(true)
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired)
+  }, [])
 
   const handleLogout = () => {
     clearSession()
@@ -56,7 +67,13 @@ export function App() {
       ) : route?.kind === 'invite' ? (
         <InviteLinkView token={route.token} />
       ) : !session ? (
-        <LoginView onLoginSuccess={setSession} />
+        <LoginView
+          notice={expiredNotice ? 'Tu sesión terminó. Ingresa de nuevo.' : null}
+          onLoginSuccess={(s) => {
+            setExpiredNotice(false)
+            setSession(s)
+          }}
+        />
       ) : (
         <AuthedApp session={session} onLogout={handleLogout} />
       )}

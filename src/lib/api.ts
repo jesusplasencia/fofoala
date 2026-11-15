@@ -257,11 +257,27 @@ export function getVillaDisplayName(villaId: string): string {
   return /^\d+$/.test(n) ? `Villa Club ${n}` : villaId.toUpperCase()
 }
 
+export const SESSION_EXPIRED_EVENT = 'koloala:session-expired'
+
+/** Lee el `exp` del JWT (sin verificar la firma: solo para saber si ya venció en este dispositivo). */
+export function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()
+  } catch {
+    return true
+  }
+}
+
 export function getStoredSession(): AuthSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as AuthSession
+    if (isTokenExpired(parsed.access_token)) {
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
     return { ...parsed, available_lots: parsed.available_lots ?? [] }
   } catch {
     return null
@@ -300,6 +316,11 @@ async function request<T>(path: string, options: RequestInit, villaId: string, t
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  if (response.status === 401 && token) {
+    // Sesión vencida o cerrada por administración: volvemos al login.
+    clearSession()
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
+  }
   if (!response.ok) {
     let detail = `Error HTTP ${response.status}`
     try {

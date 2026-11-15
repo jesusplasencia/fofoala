@@ -15,9 +15,10 @@ import {
   TreePine,
   Unlock,
   Upload,
+  Users,
   X,
 } from 'lucide-react'
-import { type ChangeEvent, type FormEvent, useRef, useState } from 'react'
+import { type ChangeEvent, type FormEvent, Fragment, useRef, useState } from 'react'
 import {
   type AccessSearchResponse,
   type AuthSession,
@@ -27,6 +28,7 @@ import {
   type PropertyLotResponse,
   VERIFICATION_LABEL,
 } from '../lib/api'
+import { AdminLotMembers } from './AdminMembers'
 import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
@@ -114,7 +116,7 @@ function LotsTab({ villaId }: { villaId: string }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
-  const [editDoc, setEditDoc] = useState('')
+  const [openMembers, setOpenMembers] = useState<string | null>(null)
   const [newLot, setNewLot] = useState({ lot_id: '', owner_name: '', owner_phone: '', doc: '', ok: true })
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -126,23 +128,15 @@ function LotsTab({ villaId }: { villaId: string }) {
     onSuccess: refresh,
   })
   const save = useMutation({
-    mutationFn: async (l: PropertyLotResponse) => {
-      const updated = await koloalaApi.updateLotDetails(l.lot_id, {
+    mutationFn: (l: PropertyLotResponse) =>
+      koloalaApi.updateLotDetails(l.lot_id, {
         is_maintenance_up_to_date: l.is_maintenance_up_to_date,
         owner_name: editName.trim(),
         owner_phone: editPhone.trim() || '',
-      })
-      const phone = (updated.owner_phone || '').replace(/\D/g, '').slice(-9)
-      if (editDoc.trim() && phone.length === 9) {
-        await koloalaApi.updateLotMember(l.lot_id, phone, { document_id: editDoc.trim() })
-      }
-      return updated
-    },
+      }),
     onSuccess: () => {
       refresh()
       setEditing(null)
-      if (editDoc.trim()) setSummary('Datos del titular actualizados, incluido su DNI.')
-      setEditDoc('')
     },
   })
   const resetPin = useMutation({
@@ -283,27 +277,14 @@ function LotsTab({ villaId }: { villaId: string }) {
               {residential.map((lot) => {
                 const isEd = editing === lot.lot_id
                 return (
-                  <tr key={lot.lot_id} className={isEd ? 'bg-gold-50/60' : 'hover:bg-snow'}>
+                  <Fragment key={lot.lot_id}>
+                  <tr className={isEd ? 'bg-gold-50/60' : 'hover:bg-snow'}>
                     <td className="py-3 px-5 font-black font-mono text-base text-pine-950">{lot.lot_id}</td>
                     <td className="py-3 px-5 font-bold text-pine-900">
                       {isEd ? <input autoFocus aria-label="Propietario" value={editName} onChange={(e) => setEditName(e.target.value)} className={`${inputClass} !py-1.5`} /> : lot.owner_name}
                     </td>
                     <td className="py-3 px-5 font-mono text-xs text-pine-800/70">
-                      {isEd ? (
-                        <div className="flex flex-col gap-1.5">
-                          <input aria-label="Teléfono" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${inputClass} !py-1.5 !w-36`} />
-                          <input
-                            aria-label="Nuevo DNI del titular"
-                            placeholder="Nuevo DNI (opcional)"
-                            maxLength={12}
-                            value={editDoc}
-                            onChange={(e) => setEditDoc(e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, ''))}
-                            className={`${inputClass} !py-1.5 !w-36`}
-                          />
-                        </div>
-                      ) : (
-                        lot.owner_phone || '—'
-                      )}
+                      {isEd ? <input aria-label="Teléfono" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${inputClass} !py-1.5 !w-36`} /> : lot.owner_phone || '—'}
                     </td>
                     <td className="py-3 px-5">
                       <button type="button" onClick={() => toggle.mutate(lot)} className="cursor-pointer" title="Cambiar estado">
@@ -322,6 +303,14 @@ function LotsTab({ villaId }: { villaId: string }) {
                         </span>
                       ) : (
                         <span className="inline-flex gap-1">
+                          <Button
+                            size="sm"
+                            variant={openMembers === lot.lot_id ? 'gold' : 'ghost'}
+                            onClick={() => setOpenMembers(openMembers === lot.lot_id ? null : lot.lot_id)}
+                            aria-expanded={openMembers === lot.lot_id}
+                          >
+                            <Users className="w-4 h-4" /> Integrantes
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => resetPin.mutate(lot.lot_id)} title="Restablecer acceso por WhatsApp">
                             <KeyRound className="w-4 h-4" />
                           </Button>
@@ -341,6 +330,14 @@ function LotsTab({ villaId }: { villaId: string }) {
                       )}
                     </td>
                   </tr>
+                  {openMembers === lot.lot_id && (
+                    <tr>
+                      <td colSpan={5} className="px-5 pb-4">
+                        <AdminLotMembers lotId={lot.lot_id} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>
