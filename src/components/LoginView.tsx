@@ -133,7 +133,7 @@ export function LoginView({ onLoginSuccess, notice: sessionNotice }: LoginViewPr
                       autoFocus
                       autoComplete="username"
                       inputMode="tel"
-                      placeholder="Ej. 916220518"
+                      placeholder="Ej. 999888777"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       className={`${inputClass} pl-12 text-lg tracking-wide`}

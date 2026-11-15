@@ -13,7 +13,7 @@ export type ScanResult =
 
 /**
  * Interpreta lo que lee la cámara de garita:
- * - Carnet de residente: "R1.VC3.916220518.<ventana>.<firma>"
+ * - Carnet de residente: "R1.VC3.999888777.<ventana>.<firma>"
  * - Pase de visita: enlace ".../v/<token>", token suelto o código de 6 caracteres
  */
 export function parseScan(raw: string): ScanResult {
