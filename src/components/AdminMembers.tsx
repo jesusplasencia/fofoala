@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, IdCard, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
-import { koloalaApi, type LotMembership } from '../lib/api'
+import { koloalaApi, type LotMembership, type StaffMember, type StaffRoleName } from '../lib/api'
 import { Alert, Badge, Button, errorMessage, inputClass } from './ui'
 
 const cleanDoc = (v: string) => v.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12)
@@ -146,6 +146,104 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
           <UserPlus className="w-4 h-4" /> Agregar
         </Button>
       </form>
+    </div>
+  )
+}
+
+/** Personal de la Villa: vigilantes (y administradores si eres Super Admin). Entran con su celular + DNI + PIN. */
+export function StaffTab({ canAddAdmins }: { canAddAdmins: boolean }) {
+  const qc = useQueryClient()
+  const staff = useQuery({ queryKey: ['staff'], queryFn: koloalaApi.listStaff })
+  const [form, setForm] = useState({ first: '', last: '', phone: '', doc: '', role: 'GUARD' as StaffRoleName })
+  const [notice, setNotice] = useState<string | null>(null)
+  const refresh = () => qc.invalidateQueries({ queryKey: ['staff'] })
+
+  const add = useMutation({
+    mutationFn: () =>
+      koloalaApi.addStaff({
+        phone: form.phone,
+        full_name: `${form.first.trim()} ${form.last.trim()}`.trim(),
+        document_id: form.doc || undefined,
+        role: form.role,
+      }),
+    onSuccess: () => {
+      setNotice('Personal agregado. Entrará con su celular y su DNI; recibirá su PIN por WhatsApp.')
+      setForm({ first: '', last: '', phone: '', doc: '', role: 'GUARD' })
+      refresh()
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (s: StaffMember) => koloalaApi.removeStaff(s.phone),
+    onSuccess: (_, s) => {
+      setNotice(`${s.full_name ?? s.phone} fue dado de baja y su sesión se cerró.`)
+      refresh()
+    },
+  })
+  const err = add.error || remove.error || staff.error
+  const valid = form.phone.length === 9 && form.first.trim() && form.last.trim() && form.doc.length >= 8
+
+  return (
+    <div className="space-y-4">
+      {notice && <Alert tone="success" onClose={() => setNotice(null)}>{notice}</Alert>}
+      {err && <Alert tone="error">{errorMessage(err, 'Ocurrió un error')}</Alert>}
+
+      <div className="bg-white rounded-3xl border border-pine-100 p-5 space-y-3">
+        <h2 className="text-base font-black text-pine-950">Agregar personal</h2>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (valid) add.mutate()
+          }}
+          className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-center"
+        >
+          <input aria-label="Nombres" placeholder="Nombres" value={form.first} onChange={(e) => setForm({ ...form, first: e.target.value })} className={`${inputClass} !py-2`} />
+          <input aria-label="Apellidos" placeholder="Apellidos" value={form.last} onChange={(e) => setForm({ ...form, last: e.target.value })} className={`${inputClass} !py-2`} />
+          <input
+            aria-label="Celular"
+            inputMode="tel"
+            placeholder="Celular"
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 9) })}
+            className={`${inputClass} !py-2 font-mono`}
+          />
+          <input aria-label="DNI / CE" placeholder="DNI / CE" value={form.doc} onChange={(e) => setForm({ ...form, doc: cleanDoc(e.target.value) })} className={`${inputClass} !py-2 font-mono`} />
+          <select aria-label="Rol" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as StaffRoleName })} className={`${inputClass} !py-2`}>
+            <option value="GUARD">Vigilante</option>
+            {canAddAdmins && <option value="ADMIN">Administrador</option>}
+          </select>
+          <Button type="submit" size="sm" loading={add.isPending} disabled={!valid}>
+            <UserPlus className="w-4 h-4" /> Agregar
+          </Button>
+        </form>
+      </div>
+
+      <div className="bg-white rounded-3xl border border-pine-100 p-2">
+        <ul className="divide-y divide-pine-50">
+          {staff.data?.map((s) => (
+            <li key={s.phone} className={`p-3 flex flex-wrap items-center gap-3 ${s.is_active ? '' : 'opacity-50'}`}>
+              <div className="flex-1 min-w-[180px]">
+                <p className="font-extrabold text-pine-950">{s.full_name ?? 'Sin nombre'}</p>
+                <p className="text-xs font-mono text-pine-800/60">{s.phone}</p>
+              </div>
+              <Badge tone={s.role === 'ADMIN' ? 'gold' : 'pine'}>{s.role === 'ADMIN' ? 'Administrador' : 'Vigilante'}</Badge>
+              <span className="text-xs font-extrabold text-pine-700">{s.document_id ? `DNI ${s.document_id}` : '⚠️ Falta DNI'}</span>
+              <Badge tone={s.is_active ? (s.has_activated ? 'pine' : 'gold') : 'muted'}>
+                {s.is_active ? (s.has_activated ? 'Activo' : 'Sin activar') : 'De baja'}
+              </Badge>
+              {s.is_active && (s.role === 'GUARD' || canAddAdmins) && (
+                <button
+                  type="button"
+                  onClick={() => window.confirm(`¿Dar de baja a ${s.full_name ?? s.phone}? Se cerrará su sesión.`) && remove.mutate(s)}
+                  className="p-2 rounded-xl text-berry-700 hover:bg-berry-50 cursor-pointer"
+                  aria-label={`Dar de baja a ${s.full_name ?? s.phone}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

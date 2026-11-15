@@ -139,7 +139,7 @@ export function LoginView({ onLoginSuccess, notice: sessionNotice }: LoginViewPr
                       className={`${inputClass} pl-12 text-lg tracking-wide`}
                     />
                   </div>
-                  <p className="text-[11px] text-pine-800/60 font-semibold mt-1.5">Personal de garita: usa tu usuario (ej. GUARDIA1).</p>
+                  <p className="text-[11px] text-pine-800/60 font-semibold mt-1.5">Todos entran con su celular, también el personal de garita.</p>
                 </div>
                 <Button type="submit" size="lg" className="w-full" loading={loading}>
                   Continuar

@@ -5,11 +5,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
-  KeyRound,
   Pencil,
   Plus,
   RefreshCw,
   Search,
+  Shield,
   ShieldAlert,
   Store,
   TreePine,
@@ -28,7 +28,7 @@ import {
   type PropertyLotResponse,
   VERIFICATION_LABEL,
 } from '../lib/api'
-import { AdminLotMembers } from './AdminMembers'
+import { AdminLotMembers, StaffTab } from './AdminMembers'
 import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
@@ -38,7 +38,7 @@ interface AdminViewProps {
   onSwitchToResident?: () => void
 }
 
-type Tab = 'lots' | 'catalog' | 'search' | 'security'
+type Tab = 'lots' | 'staff' | 'catalog' | 'search' | 'security'
 
 export function AdminView({ session, onLogout, onSwitchToResident }: AdminViewProps) {
   const [tab, setTab] = useState<Tab>('lots')
@@ -59,6 +59,7 @@ export function AdminView({ session, onLogout, onSwitchToResident }: AdminViewPr
               onChange={setTab}
               tabs={[
                 { id: 'lots', label: 'Padrón', icon: <Building2 className="w-4 h-4" /> },
+                { id: 'staff', label: 'Personal', icon: <Shield className="w-4 h-4" /> },
                 { id: 'catalog', label: 'Catálogo', icon: <Store className="w-4 h-4" /> },
                 { id: 'search', label: 'Incidentes', icon: <Search className="w-4 h-4" /> },
                 { id: 'security', label: 'Seguridad', icon: <ShieldAlert className="w-4 h-4" /> },
@@ -74,6 +75,7 @@ export function AdminView({ session, onLogout, onSwitchToResident }: AdminViewPr
       </AppHeader>
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
         {tab === 'lots' && <LotsTab villaId={session.villa_id} />}
+        {tab === 'staff' && <StaffTab canAddAdmins={session.role === 'SUPER_ADMIN'} />}
         {tab === 'catalog' && <CatalogTab />}
         {tab === 'search' && <SearchTab />}
         {tab === 'security' && <SecurityTab villaId={session.villa_id} />}
@@ -115,7 +117,6 @@ function LotsTab({ villaId }: { villaId: string }) {
   const [summary, setSummary] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
-  const [editPhone, setEditPhone] = useState('')
   const [openMembers, setOpenMembers] = useState<string | null>(null)
   const [newLot, setNewLot] = useState({ lot_id: '', owner_name: '', owner_phone: '', doc: '', ok: true })
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -132,17 +133,11 @@ function LotsTab({ villaId }: { villaId: string }) {
       koloalaApi.updateLotDetails(l.lot_id, {
         is_maintenance_up_to_date: l.is_maintenance_up_to_date,
         owner_name: editName.trim(),
-        owner_phone: editPhone.trim() || '',
       }),
     onSuccess: () => {
       refresh()
       setEditing(null)
     },
-  })
-  const resetPin = useMutation({
-    mutationFn: (lotId: string) => koloalaApi.resetLotPassword(lotId),
-    onSuccess: (c) =>
-      setSummary(`Acceso restablecido para ${c.lot_id} (${c.owner_name}). Al ingresar confirmará su DNI y recibirá un PIN nuevo por WhatsApp.`),
   })
   const bulk = useMutation({
     mutationFn: (rows: LotRow[]) => koloalaApi.bulkImportLots(rows),
@@ -180,8 +175,8 @@ function LotsTab({ villaId }: { villaId: string }) {
   return (
     <>
       {summary && <Alert tone="success" onClose={() => setSummary(null)}>{summary}</Alert>}
-      {(bulk.isError || toggle.isError || save.isError || resetPin.isError) && (
-        <Alert tone="error">{errorMessage(bulk.error || toggle.error || save.error || resetPin.error, 'Ocurrió un error')}</Alert>
+      {(bulk.isError || toggle.isError || save.isError) && (
+        <Alert tone="error">{errorMessage(bulk.error || toggle.error || save.error, 'Ocurrió un error')}</Alert>
       )}
 
       <Card className="p-5 space-y-4">
@@ -284,7 +279,7 @@ function LotsTab({ villaId }: { villaId: string }) {
                       {isEd ? <input autoFocus aria-label="Propietario" value={editName} onChange={(e) => setEditName(e.target.value)} className={`${inputClass} !py-1.5`} /> : lot.owner_name}
                     </td>
                     <td className="py-3 px-5 font-mono text-xs text-pine-800/70">
-                      {isEd ? <input aria-label="Teléfono" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${inputClass} !py-1.5 !w-36`} /> : lot.owner_phone || '—'}
+                      {lot.owner_phone || '—'}
                     </td>
                     <td className="py-3 px-5">
                       <button type="button" onClick={() => toggle.mutate(lot)} className="cursor-pointer" title="Cambiar estado">
@@ -311,17 +306,13 @@ function LotsTab({ villaId }: { villaId: string }) {
                           >
                             <Users className="w-4 h-4" /> Integrantes
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => resetPin.mutate(lot.lot_id)} title="Restablecer acceso por WhatsApp">
-                            <KeyRound className="w-4 h-4" />
-                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             aria-label={`Editar ${lot.lot_id}`}
                             onClick={() => {
                               setEditing(lot.lot_id)
-                              setEditName(lot.owner_name)
-                              setEditPhone(lot.owner_phone || '')
+                              setEditName(lot.owner_name || '')
                             }}
                           >
                             <Pencil className="w-4 h-4" />

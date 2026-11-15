@@ -164,7 +164,6 @@ export interface PropertyLotResponse {
   lot_id: string
   owner_name: string
   owner_phone: string | null
-  owner_email: string | null
   is_maintenance_up_to_date: boolean
   lot_type?: LotType
   display_name?: string | null
@@ -194,23 +193,11 @@ export interface LotMembership {
   is_maintenance_up_to_date: boolean | null
 }
 
-export interface ResidentCredentialItem {
-  villa_id: string
-  lot_id: string
-  owner_name: string
-  owner_phone: string | null
-  username: string
-  initial_password: string
-  login_url: string
-  whatsapp_share_url: string | null
-}
-
 export interface BulkLotsSyncResponse {
   villa_id: string
   processed_count: number
   created_count: number
   updated_count: number
-  generated_credentials: ResidentCredentialItem[]
 }
 
 export interface CatalogBulkResponse {
@@ -218,6 +205,18 @@ export interface CatalogBulkResponse {
   created_count: number
   updated_count: number
   items: CatalogItem[]
+}
+
+export type StaffRoleName = 'ADMIN' | 'GUARD'
+
+export interface StaffMember {
+  villa_id: string
+  phone: string
+  full_name: string | null
+  role: StaffRoleName
+  document_id: string | null
+  is_active: boolean
+  has_activated: boolean
 }
 
 export interface BlockedIPReport {
@@ -439,19 +438,16 @@ export const koloalaApi = {
       method: 'PATCH',
       body: json({ is_maintenance_up_to_date }),
     }),
-  updateLotDetails: (lotId: string, payload: { is_maintenance_up_to_date: boolean; owner_name: string; owner_phone: string | null }) =>
+  updateLotDetails: (lotId: string, payload: { is_maintenance_up_to_date: boolean; owner_name?: string }) =>
     apiRequest<PropertyLotResponse>(`/api/v1/lots/${encodeURIComponent(lotId)}/maintenance`, {
       method: 'PATCH',
       body: json(payload),
     }),
-  resetLotPassword: (lotId: string) =>
-    apiRequest<ResidentCredentialItem>(`/api/v1/lots/${encodeURIComponent(lotId)}/reset-password`, { method: 'POST' }),
   bulkImportLots: (
     lots: Array<{
       lot_id: string
       owner_name: string
       owner_phone?: string
-      owner_email?: string
       owner_document_id?: string
       is_maintenance_up_to_date: boolean
     }>,
@@ -465,6 +461,11 @@ export const koloalaApi = {
     })
     return apiRequest<AccessSearchResponse>(`/api/v1/admin/access-search?${params.toString()}`)
   },
+  listStaff: () => apiRequest<StaffMember[]>('/api/v1/admin/staff'),
+  addStaff: (payload: { phone: string; full_name: string; document_id?: string; role: StaffRoleName }) =>
+    apiRequest<StaffMember>('/api/v1/admin/staff', { method: 'POST', body: json(payload) }),
+  removeStaff: (phone: string) =>
+    apiRequest<StaffMember>(`/api/v1/admin/staff/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
   listBlockedIps: () => apiRequest<BlockedIPReport[]>('/api/v1/auth/security/blocked-ips'),
   unblockIp: (ipAddress: string) =>
     apiRequest<{ message: string }>(`/api/v1/auth/security/blocked-ips/${encodeURIComponent(ipAddress)}`, {
