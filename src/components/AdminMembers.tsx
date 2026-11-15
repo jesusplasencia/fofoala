@@ -20,7 +20,11 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
   const changeDoc = useMutation({
     mutationFn: (m: LotMembership) => koloalaApi.updateLotMember(lotId, m.phone, { document_id: newDoc }),
     onSuccess: (_, m) => {
-      setNotice(`DNI de ${m.full_name} actualizado. Su acceso se restableció: entrará con su celular y este DNI y recibirá un PIN nuevo por WhatsApp.`)
+      setNotice(
+        m.document_id
+          ? `DNI de ${m.full_name} cambiado. Su acceso se restableció: entrará con su celular y este DNI y recibirá un PIN nuevo por WhatsApp.`
+          : `DNI de ${m.full_name} registrado. Sigue entrando normalmente.`,
+      )
       setEditing(null)
       setNewDoc('')
       refresh()
@@ -49,6 +53,11 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
 
   const confirmChange = (m: LotMembership) => {
     if (newDoc.length < 8) return
+    if (!m.document_id) {
+      // Completar un DNI vacío no afecta su acceso
+      changeDoc.mutate(m)
+      return
+    }
     const ok = window.confirm(
       `¿Cambiar el DNI de ${m.full_name}?\n\nSe restablecerá su acceso: su contraseña actual dejará de funcionar, ` +
         'se cerrarán sus sesiones abiertas y deberá entrar con su celular y este DNI para recibir un PIN nuevo por WhatsApp.',
