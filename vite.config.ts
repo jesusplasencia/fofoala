@@ -10,6 +10,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: false,
+      workbox: {
+        // La versión nueva reemplaza a la vieja apenas se publica (sin quedarse en caché)
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        navigateFallback: '/index.html',
+      },
       manifest: {
         name: 'Las Villas Club - Control de Garita',
         short_name: 'Las Villas',

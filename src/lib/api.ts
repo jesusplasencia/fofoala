@@ -387,7 +387,7 @@ export const koloalaApi = {
       method: 'POST',
       body: json(payload),
     }),
-  updateLotMember: (lotId: string, phone: string, payload: { full_name?: string; document_id?: string }) =>
+  updateLotMember: (lotId: string, phone: string, payload: { full_name?: string; document_id?: string; phone?: string }) =>
     apiRequest<LotMembership>(
       `/api/v1/lots/${encodeURIComponent(lotId)}/members/${encodeURIComponent(phone)}`,
       { method: 'PATCH', body: json(payload) },

@@ -11,6 +11,7 @@ import {
   IdCard,
   LayoutDashboard,
   Share2,
+  Smartphone,
   Ticket,
   Trash2,
   UserPlus,
@@ -437,6 +438,18 @@ function FamilyTab({ lotId, isAnchor }: { lotId: string | null; isAnchor: boolea
     mutationFn: (p: string) => koloalaApi.removeLotMember(lotId as string, p),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['members', lotId] }),
   })
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editPhone, setEditPhone] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
+  const changePhone = useMutation({
+    mutationFn: (current: string) => koloalaApi.updateLotMember(lotId as string, current, { phone: editPhone }),
+    onSuccess: (m) => {
+      setEditing(null)
+      setEditPhone('')
+      setNotice(`Celular de ${m.full_name} actualizado. Entrará con su nuevo número y su DNI, y recibirá un PIN nuevo por WhatsApp.`)
+      qc.invalidateQueries({ queryKey: ['members', lotId] })
+    },
+  })
 
   if (!lotId) return <Alert tone="warn">No tienes un lote activo.</Alert>
 
@@ -486,20 +499,70 @@ function FamilyTab({ lotId, isAnchor }: { lotId: string | null; isAnchor: boolea
           </form>
         </Card>
       )}
+      {notice && <Alert tone="success" onClose={() => setNotice(null)}>{notice}</Alert>}
+      {changePhone.isError && <Alert tone="error">{errorMessage(changePhone.error, 'No se pudo cambiar el celular')}</Alert>}
       <Card className="p-2">
         {members.isError && <div className="p-3"><Alert tone="error">{errorMessage(members.error, 'No se pudo cargar')}</Alert></div>}
         {members.data?.length === 0 && <EmptyState icon={<Users className="w-8 h-8" />}>Aún no hay integrantes.</EmptyState>}
         <ul className="divide-y divide-pine-50">
           {members.data?.map((m) => (
-            <li key={m.phone} className="flex items-center justify-between gap-3 p-3">
+            <li key={m.phone} className="flex flex-wrap items-center justify-between gap-3 p-3">
               <div className="min-w-0">
                 <p className="font-extrabold text-pine-950 truncate">{m.full_name}</p>
-                <p className="text-xs font-mono text-pine-800/60">{m.phone}</p>
+                {editing === m.phone ? (
+                  <form
+                    className="flex items-center gap-1.5 mt-1"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      if (
+                        editPhone.length === 9 &&
+                        window.confirm(
+                          `¿Cambiar el celular de ${m.full_name} a ${editPhone}?
+
+Su sesión actual se cerrará y entrará con el nuevo número y su DNI.`,
+                        )
+                      )
+                        changePhone.mutate(m.phone)
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      aria-label={`Nuevo celular de ${m.full_name}`}
+                      inputMode="tel"
+                      placeholder="Nuevo celular"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                      className={`${inputClass} !py-1.5 !w-36 font-mono`}
+                    />
+                    <Button type="submit" size="sm" loading={changePhone.isPending} disabled={editPhone.length !== 9}>
+                      Guardar
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                      Cancelar
+                    </Button>
+                  </form>
+                ) : (
+                  <p className="text-xs font-mono text-pine-800/60">{m.phone}</p>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <Badge tone={m.membership_role === 'ANCHOR' ? 'gold' : 'pine'}>
                   {m.membership_role === 'ANCHOR' ? 'Titular' : 'Familiar'}
                 </Badge>
+                {isAnchor && m.membership_role === 'HOUSEHOLD' && editing !== m.phone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(m.phone)
+                      setEditPhone('')
+                    }}
+                    className="p-2 rounded-xl text-pine-700 hover:bg-pine-50 cursor-pointer"
+                    aria-label={`Cambiar celular de ${m.full_name}`}
+                    title="Cambiar celular"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                  </button>
+                )}
                 {isAnchor && m.membership_role === 'HOUSEHOLD' && (
                   <button
                     type="button"

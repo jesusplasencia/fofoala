@@ -13,6 +13,8 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
   const members = useQuery({ queryKey: key, queryFn: () => koloalaApi.listLotMembers(lotId) })
   const [editing, setEditing] = useState<string | null>(null)
   const [newDoc, setNewDoc] = useState('')
+  const [phoneEditing, setPhoneEditing] = useState<string | null>(null)
+  const [newPhone, setNewPhone] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [add, setAdd] = useState({ first: '', last: '', phone: '', doc: '' })
   const refresh = () => qc.invalidateQueries({ queryKey: key })
@@ -27,6 +29,15 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
       )
       setEditing(null)
       setNewDoc('')
+      refresh()
+    },
+  })
+  const changePhone = useMutation({
+    mutationFn: (m: LotMembership) => koloalaApi.updateLotMember(lotId, m.phone, { phone: newPhone }),
+    onSuccess: (m) => {
+      setNotice(`Celular de ${m.full_name} cambiado a ${m.phone}. Entrará con su nuevo número y su DNI.`)
+      setPhoneEditing(null)
+      setNewPhone('')
       refresh()
     },
   })
@@ -65,7 +76,7 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
     if (ok) changeDoc.mutate(m)
   }
 
-  const err = changeDoc.error || remove.error || create.error || members.error
+  const err = changeDoc.error || changePhone.error || remove.error || create.error || members.error
 
   return (
     <div className="bg-snow border-2 border-gold-200 rounded-2xl p-4 space-y-3">
@@ -77,7 +88,45 @@ export function AdminLotMembers({ lotId }: { lotId: string }) {
           <li key={m.phone} className="py-2.5 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[180px]">
               <p className="font-extrabold text-pine-950">{m.full_name}</p>
-              <p className="text-xs font-mono text-pine-800/60">{m.phone}</p>
+              {phoneEditing === m.phone ? (
+                <span className="flex items-center gap-1.5 mt-1">
+                  <input
+                    autoFocus
+                    aria-label={`Nuevo celular de ${m.full_name}`}
+                    inputMode="tel"
+                    placeholder="Nuevo celular"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))}
+                    className={`${inputClass} !py-1.5 !w-36 font-mono`}
+                  />
+                  <Button
+                    size="sm"
+                    disabled={newPhone.length !== 9}
+                    loading={changePhone.isPending}
+                    onClick={() =>
+                      window.confirm(`¿Cambiar el celular de ${m.full_name} a ${newPhone}? Se cerrará su sesión y entrará con el nuevo número y su DNI.`) &&
+                      changePhone.mutate(m)
+                    }
+                  >
+                    Guardar
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setPhoneEditing(null)}>
+                    Cancelar
+                  </Button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneEditing(m.phone)
+                    setNewPhone('')
+                  }}
+                  className="text-xs font-mono text-pine-800/60 hover:text-berry-700 hover:underline cursor-pointer"
+                  title="Cambiar celular"
+                >
+                  {m.phone} ✎
+                </button>
+              )}
             </div>
             <Badge tone={m.membership_role === 'ANCHOR' ? 'gold' : 'pine'}>{m.membership_role === 'ANCHOR' ? 'Titular' : 'Familiar'}</Badge>
             {m.document_id ? (
