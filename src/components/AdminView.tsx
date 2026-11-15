@@ -155,31 +155,7 @@ function BulkResult({ result, onClose }: { result: BulkLotsSyncResponse; onClose
         </div>
       </div>
       {result.rejected_count > 0 && (
-        <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-2xl border border-berry-200">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-berry-50 text-[11px] font-extrabold uppercase tracking-wider text-berry-800 sticky top-0">
-              <tr>
-                <th className="py-2 px-3">Fila</th>
-                <th className="py-2 px-3">Lote</th>
-                <th className="py-2 px-3">Celular</th>
-                <th className="py-2 px-3">Motivo</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-berry-100">
-              {result.rejected.map((r, i) => (
-                <tr key={i}>
-                  <td className="py-2 px-3 font-mono font-bold">{r.row_number ?? '—'}</td>
-                  <td className="py-2 px-3 font-mono">{r.lot_id ?? '—'}</td>
-                  <td className="py-2 px-3 font-mono text-pine-800/70">{r.phone ?? '—'}</td>
-                  <td className="py-2 px-3 font-semibold text-berry-800">{r.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {result.rejected_count > 0 && (
-        <p className="text-[11px] font-semibold text-pine-800/60">Corrige esas filas en tu Excel y vuelve a subir solo ellas: las ya cargadas no se duplican.</p>
+        <p className="text-[11px] font-semibold text-pine-800/60">Descarga el CSV de errores para ver cada fila y su motivo; corrígelas y vuelve a subir solo esas (las ya cargadas no se duplican).</p>
       )}
     </Card>
   )
