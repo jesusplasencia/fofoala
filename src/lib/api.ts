@@ -389,6 +389,7 @@ export const koloalaApi = {
   }) => apiRequest<InviteResponse>('/api/v1/visits/invite', { method: 'POST', body: json(payload) }),
   myCarnet: () => apiRequest<CarnetResponse>('/api/v1/me/carnet'),
   myEntries: () => apiRequest<{ villa_id: string; items: ResidentEntryView[] }>('/api/v1/me/entries'),
+  lotEntries: () => apiRequest<LotEntriesResponse>('/api/v1/me/lot-entries'),
   myMemberships: () => apiRequest<LotMembership[]>('/api/v1/lots/my-memberships'),
   listLotMembers: (lotId: string) =>
     apiRequest<LotMembership[]>(`/api/v1/lots/${encodeURIComponent(lotId)}/members`),
@@ -499,6 +500,41 @@ export const VERIFICATION_LABEL: Record<Verification, string> = {
 
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
+}
+
+export type LotEntryType = 'RESIDENT' | 'GUEST' | 'TAXI' | 'DELIVERY'
+
+export interface LotEntryItem {
+  at: string
+  type: LotEntryType
+  names: string[]
+  vehicle_plate: string | null
+  lot_id: string
+  invited_by: string | null
+}
+
+export interface LotEntriesResponse {
+  villa_id: string
+  lot_ids: string[]
+  since: string
+  items: LotEntryItem[]
+}
+
+const SHORT_DT = new Intl.DateTimeFormat('es-PE', {
+  timeZone: 'America/Lima',
+  day: '2-digit',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+})
+
+/** "24 nov, 07:45pm" en hora de Lima. */
+export function formatShortDateTime(iso: string): string {
+  const p = Object.fromEntries(SHORT_DT.formatToParts(new Date(iso)).map((x) => [x.type, x.value]))
+  const month = (p.month ?? '').replace('.', '').toLowerCase()
+  const ampm = (p.dayPeriod ?? '').toLowerCase().replace(/[^apm]/g, '')
+  return `${p.day} ${month}, ${p.hour}:${p.minute}${ampm}`
 }
 
 export function formatDateTime(iso: string): string {

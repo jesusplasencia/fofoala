@@ -21,10 +21,12 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   type AuthSession,
   formatDateTime,
+  formatShortDateTime,
   formatTime,
   type InviteResponse,
   KIND_LABEL,
   koloalaApi,
+  type LotEntryType,
   type VisitKind,
 } from '../lib/api'
 import { buildShareUrl, generatePassCardBlob, qrDataUrl } from '../lib/passCard'
@@ -587,28 +589,46 @@ Su sesión actual se cerrará y entrará con el nuevo número y su DNI.`,
 // ---------------------------------------------------------------------------
 // Mis ingresos
 // ---------------------------------------------------------------------------
+const ENTRY_LABEL: Record<LotEntryType, { label: string; tone: 'pine' | 'berry' | 'gold' | 'muted' }> = {
+  RESIDENT: { label: 'Residente', tone: 'pine' },
+  GUEST: { label: 'Invitado', tone: 'gold' },
+  TAXI: { label: 'Taxi', tone: 'berry' },
+  DELIVERY: { label: 'Delivery', tone: 'muted' },
+}
+
 function EntriesTab() {
-  const query = useQuery({ queryKey: ['my-entries'], queryFn: koloalaApi.myEntries })
+  const query = useQuery({ queryKey: ['lot-entries'], queryFn: koloalaApi.lotEntries, refetchInterval: 60_000 })
   if (query.isError) return <Alert tone="error">{errorMessage(query.error, 'No se pudo cargar')}</Alert>
   const items = query.data?.items ?? []
+  const manyLots = (query.data?.lot_ids.length ?? 0) > 1
   return (
     <Card className="p-2">
+      <h2 className="px-3 pt-2 text-sm font-black text-pine-950">Ingresos a tu lote — últimas 24 horas</h2>
       {items.length === 0 ? (
-        <EmptyState icon={<History className="w-8 h-8" />}>Todavía no hay ingresos registrados.</EmptyState>
+        <EmptyState icon={<History className="w-8 h-8" />}>No hubo ingresos en las últimas 24 horas.</EmptyState>
       ) : (
         <ul className="divide-y divide-pine-50">
-          {items.map((e, i) => (
-            <li key={i} className="flex items-center justify-between p-3">
-              <div>
-                <p className="font-extrabold text-pine-950">{formatDateTime(e.at)}</p>
-                <p className="text-xs font-semibold text-pine-800/60">
-                  {e.method === 'QR' ? 'Con carnet' : 'Registro manual'}
-                  {e.vehicle_plate ? ` • ${e.vehicle_plate}` : ''}
-                </p>
-              </div>
-              <Badge tone="pine">{e.lots.map((l) => l.lot_id).join(', ')}</Badge>
-            </li>
-          ))}
+          {items.map((e, i) => {
+            const tag = ENTRY_LABEL[e.type]
+            const who = e.names.length > 1 ? `${e.names[0]} +${e.names.length - 1}` : (e.names[0] ?? '—')
+            const extra = [
+              e.vehicle_plate,
+              e.invited_by ? `invitó: ${e.invited_by}` : null,
+              manyLots ? `Lote ${e.lot_id}` : null,
+            ].filter(Boolean)
+            return (
+              <li key={i} className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold text-pine-800/70">{formatShortDateTime(e.at)}</p>
+                  <p className="font-extrabold text-pine-950 truncate">{who}</p>
+                  {extra.length > 0 && (
+                    <p className="text-xs font-semibold text-pine-800/60 truncate">{extra.join(' • ')}</p>
+                  )}
+                </div>
+                <Badge tone={tag.tone}>{tag.label}</Badge>
+              </li>
+            )
+          })}
         </ul>
       )}
     </Card>
