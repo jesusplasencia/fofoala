@@ -11,7 +11,6 @@ import {
   Home,
   RotateCcw,
   ScanLine,
-  ScanText,
   Search,
   Shield,
   UserPlus,
@@ -29,10 +28,8 @@ import {
   type Verification,
   VERIFICATION_LABEL,
 } from '../lib/api'
-import { type DniData } from '../lib/mrz'
 import { parseScan } from '../lib/passCard'
 import { type AttendeeDraft, AttendeeEditor, emptyAttendee, toAttendeeInputs } from './AttendeeEditor'
-import { DniCapture } from './DniCapture'
 import { ChangePasswordButton } from './ChangePassword'
 import { Alert, AppHeader, Badge, Button, Card, EmptyState, errorMessage, inputClass, Label, Tabs } from './ui'
 
@@ -476,15 +473,13 @@ function PassCheckIn({ pass, passRef, onDone }: { pass: GuardPassView; passRef: 
 }
 
 // ---------------------------------------------------------------------------
-// Mesa: visitante sin invitación → DNI físico (foto del reverso, OCR) → servicio del catálogo
+// Mesa: visitante sin invitación → datos del DNI a mano (el guardia compara la cara) → servicio del catálogo
 // ---------------------------------------------------------------------------
 function DeskTab() {
   const catalog = useQuery({ queryKey: ['public-villa'], queryFn: koloalaApi.publicVilla })
   const [dest, setDest] = useState('')
-  const [rows, setRows] = useState<AttendeeDraft[]>([])
+  const [rows, setRows] = useState<AttendeeDraft[]>([emptyAttendee()])
   const [plate, setPlate] = useState('')
-  const [camera, setCamera] = useState(false)
-  const [lastRead, setLastRead] = useState<DniData | null>(null)
   const [done, setDone] = useState<GuardPassView | null>(null)
 
   const mut = useMutation({
@@ -496,30 +491,11 @@ function DeskTab() {
       ),
     onSuccess: (r) => {
       setDone(r)
-      setRows([])
+      setRows([emptyAttendee()])
       setPlate('')
       setDest('')
-      setLastRead(null)
     },
   })
-
-  const onDni = (d: DniData) => {
-    setCamera(false)
-    setLastRead(d)
-    const filled: AttendeeDraft = {
-      first_names: d.first_names,
-      last_names: d.last_names,
-      doc_type: 'DNI',
-      doc_number: d.doc_number,
-      ocr_doc: d.doc_number,
-    }
-    // Reemplaza la primera fila vacía o agrega una nueva
-    setRows((prev) => {
-      const idx = prev.findIndex((r) => !r.first_names.trim() && !r.doc_number.trim())
-      if (idx === -1) return [...prev, filled]
-      return prev.map((r, i) => (i === idx ? filled : r))
-    })
-  }
 
   return (
     <div className="space-y-4">
@@ -537,28 +513,7 @@ function DeskTab() {
         </div>
         {mut.isError && <Alert tone="error">{errorMessage(mut.error, 'No se pudo registrar')}</Alert>}
 
-        <Button size="lg" variant="gold" className="w-full" onClick={() => setCamera(true)}>
-          <ScanText className="w-6 h-6" /> Fotografiar reverso del DNI
-        </Button>
-        {lastRead && (
-          <Alert tone={lastRead.checksum_ok ? 'success' : 'warn'}>
-            {lastRead.checksum_ok
-              ? 'DNI leído. Revisa los datos antes de registrar.'
-              : 'Leímos el DNI pero el número podría tener un error. Compáralo con el documento.'}
-          </Alert>
-        )}
-
-        {rows.length > 0 ? (
-          <AttendeeEditor rows={rows} onChange={setRows} minRows={0} />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setRows([emptyAttendee()])}
-            className="w-full text-sm font-extrabold text-pine-700 hover:underline cursor-pointer"
-          >
-            ¿Sin DNI físico o la cámara no lee? Escribir los datos a mano
-          </button>
-        )}
+        <AttendeeEditor rows={rows} onChange={setRows} minRows={1} />
 
         <div>
           <Label htmlFor="desk-dest">¿A dónde va?</Label>
@@ -584,11 +539,7 @@ function DeskTab() {
         >
           Registrar ingreso
         </Button>
-        <p className="text-[11px] font-semibold text-pine-800/60 text-center">
-          La foto del DNI se lee en este teléfono y se descarta. Solo se guardan nombres, apellidos y número.
-        </p>
       </Card>
-      {camera && <DniCapture onResult={onDni} onClose={() => setCamera(false)} />}
     </div>
   )
 }

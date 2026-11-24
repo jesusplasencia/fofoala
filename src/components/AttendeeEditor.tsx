@@ -7,8 +7,6 @@ export interface AttendeeDraft {
   last_names: string
   doc_type: DocType
   doc_number: string
-  /** Número tal como lo leyó el OCR; si el guardia lo edita, deja de contar como OCR. */
-  ocr_doc?: string
 }
 
 export const emptyAttendee = (): AttendeeDraft => ({
@@ -29,7 +27,7 @@ export function toAttendeeInputs(rows: AttendeeDraft[]): AttendeeInput[] {
         last_names: r.last_names.trim() || null,
         doc_type: num ? r.doc_type : 'NINGUNO',
         doc_number: num || null,
-        doc_source: num ? (r.ocr_doc && r.ocr_doc === num ? 'OCR' : 'MANUAL') : null,
+        doc_source: num ? 'MANUAL' : null,
       } as AttendeeInput
     })
 }
@@ -105,8 +103,17 @@ export function AttendeeEditor({ rows, onChange, max = 20, minRows = 1 }: Props)
               aria-label="Número de documento (opcional)"
               placeholder="N° documento (opcional)"
               inputMode={row.doc_type === 'DNI' ? 'numeric' : 'text'}
+              maxLength={row.doc_type === 'DNI' ? 8 : 20}
+              autoComplete="off"
               value={row.doc_number}
-              onChange={(e) => update(i, { doc_number: e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '') })}
+              onChange={(e) =>
+                update(i, {
+                  doc_number:
+                    row.doc_type === 'DNI'
+                      ? e.target.value.replace(/\D/g, '').slice(0, 8)
+                      : e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, ''),
+                })
+              }
               className={`${inputClass} font-mono`}
             />
           </div>
