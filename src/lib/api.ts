@@ -332,9 +332,14 @@ async function request<T>(path: string, options: RequestInit, villaId: string, t
   }
   if (!response.ok) {
     let detail = `Error HTTP ${response.status}`
+    let data: unknown = null
     try {
       const body = await response.json()
       if (typeof body.detail === 'string') detail = body.detail
+      else if (body.detail && typeof body.detail === 'object' && !Array.isArray(body.detail)) {
+        data = body.detail
+        detail = String(body.detail.message ?? detail)
+      }
       else if (Array.isArray(body.detail)) {
         detail = body.detail
           .map((e: { msg?: string }) => (e.msg || '').replace(/^Value error, /, ''))
@@ -343,7 +348,7 @@ async function request<T>(path: string, options: RequestInit, villaId: string, t
     } catch {
       // ignore
     }
-    throw new Error(detail)
+    throw new ApiError(detail, response.status, data)
   }
   return (await response.json()) as T
 }
@@ -431,6 +436,8 @@ export const koloalaApi = {
       method: 'POST',
       body: json({ destination_lot_id, attendees, vehicle_plate: vehicle_plate || null }),
     }),
+  otherVillaEntry: (payload: { qr_payload: string; destination_lot_id: string; vehicle_plate?: string | null }) =>
+    apiRequest<GuardPassView>('/api/v1/guard/other-villa-entry', { method: 'POST', body: json(payload) }),
   residentEntry: (payload: { qr_payload?: string; phone?: string; lot_id?: string; vehicle_plate?: string | null }) =>
     apiRequest<ResidentEntryView>('/api/v1/guard/resident-entry', { method: 'POST', body: json(payload) }),
   dailyLog: (reveal = false) =>
@@ -500,6 +507,31 @@ export const VERIFICATION_LABEL: Record<Verification, string> = {
 
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** Error de la API con el detalle estructurado (p. ej. code: 'OTHER_VILLA'). */
+export class ApiError extends Error {
+  status: number
+  data: unknown
+  constructor(message: string, status: number, data: unknown) {
+    super(message)
+    this.status = status
+    this.data = data
+  }
+}
+
+export interface OtherVillaInfo {
+  code: 'OTHER_VILLA'
+  message: string
+  home_villa: string
+  name: string
+  doc_masked: string | null
+  public_services: Array<{ lot_id: string; display_name: string }>
+}
+
+export function otherVillaInfo(err: unknown): OtherVillaInfo | null {
+  const d = err instanceof ApiError ? (err.data as { code?: string } | null) : null
+  return d && d.code === 'OTHER_VILLA' ? (d as OtherVillaInfo) : null
 }
 
 export type LotEntryType = 'RESIDENT' | 'GUEST' | 'TAXI' | 'DELIVERY'

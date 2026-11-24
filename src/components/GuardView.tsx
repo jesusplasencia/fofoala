@@ -24,6 +24,8 @@ import {
   type GuardPassView,
   KIND_LABEL,
   koloalaApi,
+  type OtherVillaInfo,
+  otherVillaInfo,
   type ResidentEntryView,
   type Verification,
   VERIFICATION_LABEL,
@@ -68,6 +70,53 @@ export function GuardView({ session, onLogout }: GuardViewProps) {
 // ---------------------------------------------------------------------------
 // Escanear: carnet de residente o pase de visita
 // ---------------------------------------------------------------------------
+// Carnet de otra villa Koloala: solo servicios públicos, un toque y entra con los datos del padrón
+function OtherVillaCard({ payload, info, onDone }: { payload: string; info: OtherVillaInfo; onDone: () => void }) {
+  const [plate, setPlate] = useState('')
+  const mut = useMutation({
+    mutationFn: (dest: string) =>
+      koloalaApi.otherVillaEntry({ qr_payload: payload, destination_lot_id: dest, vehicle_plate: plate.trim() || null }),
+  })
+  if (mut.isSuccess) {
+    return (
+      <Card className="p-5 space-y-3 border-4 border-pine-500">
+        <p className="text-lg font-black text-pine-950">Ingreso registrado a {mut.data.destination_label}</p>
+        <Button size="lg" className="w-full" onClick={onDone}>
+          <RotateCcw className="w-4 h-4" /> Siguiente
+        </Button>
+      </Card>
+    )
+  }
+  return (
+    <Card className="p-5 space-y-4 border-4 border-gold-400 bg-gold-50">
+      <div>
+        <p className="text-xs font-black uppercase tracking-widest text-gold-700">Residente de {info.home_villa}</p>
+        <p className="text-xl font-black text-pine-950">{info.name}</p>
+        {info.doc_masked && <p className="font-mono font-bold text-pine-800">DNI {info.doc_masked}</p>}
+        <p className="text-sm font-bold text-pine-800/80 mt-1">Solo puede ingresar a servicios públicos. ¿A dónde va?</p>
+      </div>
+      {mut.isError && <Alert tone="error">{errorMessage(mut.error, 'No se pudo registrar')}</Alert>}
+      {info.public_services.length === 0 ? (
+        <Alert tone="warn">Esta villa no tiene servicios públicos registrados. No abrir.</Alert>
+      ) : (
+        <div className="grid gap-2">
+          {info.public_services.map((s) => (
+            <Button key={s.lot_id} size="lg" className="w-full" loading={mut.isPending && mut.variables === s.lot_id}
+              disabled={mut.isPending} onClick={() => mut.mutate(s.lot_id)}>
+              {s.display_name}
+            </Button>
+          ))}
+        </div>
+      )}
+      <input placeholder="Placa (opcional)" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())}
+        className={`${inputClass} font-mono uppercase`} />
+      <Button variant="ghost" className="w-full" onClick={onDone}>
+        <RotateCcw className="w-4 h-4" /> Cancelar
+      </Button>
+    </Card>
+  )
+}
+
 function ScanTab() {
   const [manual, setManual] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
@@ -78,9 +127,14 @@ function ScanTab() {
   const [showManualResident, setShowManualResident] = useState(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
 
+  const [otherVilla, setOtherVilla] = useState<{ payload: string; info: OtherVillaInfo } | null>(null)
   const residentMut = useMutation({
     mutationFn: koloalaApi.residentEntry,
     onSuccess: (r) => setResident(r),
+    onError: (e, vars) => {
+      const info = otherVillaInfo(e)
+      if (info && vars.qr_payload) setOtherVilla({ payload: vars.qr_payload, info })
+    },
   })
   const lookupMut = useMutation({
     mutationFn: (ref: string) => koloalaApi.guardLookup(ref),
@@ -94,6 +148,7 @@ function ScanTab() {
     setResident(null)
     setPass(null)
     setPassRef(null)
+    setOtherVilla(null)
     setManual('')
     residentMut.reset()
     lookupMut.reset()
@@ -152,7 +207,7 @@ function ScanTab() {
   )
 
   const busy = residentMut.isPending || lookupMut.isPending
-  const err = residentMut.error || lookupMut.error
+  const err = otherVilla ? null : residentMut.error || lookupMut.error
 
   return (
     <div className="space-y-5">
@@ -172,9 +227,10 @@ function ScanTab() {
       )}
 
       {resident && <ResidentResult r={resident} onNext={clear} />}
+      {otherVilla && <OtherVillaCard payload={otherVilla.payload} info={otherVilla.info} onDone={clear} />}
       {pass && passRef && <PassCheckIn pass={pass} passRef={passRef} onDone={clear} />}
 
-      {!resident && !pass && (
+      {!resident && !pass && !otherVilla && (
         <>
           {cameraError && <Alert tone="warn" onClose={() => setCameraError(null)}>{cameraError}</Alert>}
           {scannerOpen ? (
