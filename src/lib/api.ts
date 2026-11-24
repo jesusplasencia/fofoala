@@ -247,7 +247,8 @@ function resolveApiBaseUrl(): string {
   if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) {
     return 'http://127.0.0.1:8000'
   }
-  return 'https://koloala-api-production.up.railway.app'
+  console.error('Falta VITE_API_BASE_URL en Vercel (Production y Preview). Usando el mismo dominio.')
+  return window.location.origin
 }
 
 const API_BASE_URL = resolveApiBaseUrl()
